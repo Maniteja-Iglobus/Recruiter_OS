@@ -1,0 +1,32 @@
+# Email Automation App Requirements - UPDATED
+# Python 3.8+
+
+# Core Framework
+streamlit>=1.28.0
+
+# LangChain (Updated for newer versions)
+langchain>=0.1.0
+langchain-community>=0.0.38
+langchain-core>=0.1.0
+
+# Hugging Face Models
+transformers>=4.35.0
+torch>=2.0.0
+accelerate>=0.24.0
+sentencepiece>=0.1.99
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Additional Utilities
+python-dotenv>=1.0.0
+pillow>=10.0.0
+
+# Optional: For better performance
+optimum>=1.14.0
+
+# Google Calendar Integration
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
