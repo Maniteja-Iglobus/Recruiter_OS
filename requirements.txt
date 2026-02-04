@@ -1,15 +1,24 @@
-# Email Automation App Requirements - UPDATED
+# Recruiter OS Requirements
 # Python 3.8+
 
-# Core Framework
+# Core Frameworks
 streamlit>=1.28.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
 
-# LangChain (Updated for newer versions)
+# Database
+pymongo>=4.5.0
+
+# Auth & Security
+passlib[bcrypt]>=1.7.4
+pyjwt>=2.8.0
+python-jose[cryptography]>=3.3.0
+
+# Models & AI (Already included)
 langchain>=0.1.0
 langchain-community>=0.0.38
 langchain-core>=0.1.0
-
-# Hugging Face Models
 transformers>=4.35.0
 torch>=2.0.0
 accelerate>=0.24.0
@@ -18,13 +27,18 @@ sentencepiece>=0.1.99
 # Data Processing
 pandas>=2.0.0
 numpy>=1.24.0
-
-# Additional Utilities
-python-dotenv>=1.0.0
 pillow>=10.0.0
 
-# Optional: For better performance
-optimum>=1.14.0
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+apscheduler>=3.10.0
+plotly>=5.17.0
+
+# File Processing
+pypdf2>=3.0.0
+python-docx>=0.8.11
+pdfplumber>=0.10.0
 
 # Google Calendar Integration
 google-api-python-client>=2.0.0
