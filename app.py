@@ -3,7 +3,7 @@ from typing import Dict, List, Any
 from pymongo.database import Database
 from dotenv import load_dotenv
 load_dotenv()
-
+import logging
 import os
 import re
 import smtplib
@@ -168,7 +168,7 @@ def safe_isoformat(dt):
 # HUGGINGFACE MODELS (Production-ready initialization)
 # ============================================================
 
-import logging
+
 
 # Suppress expected model loading warnings (unused pooler weights is normal for NER)
 logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
@@ -482,8 +482,11 @@ class TaskManager:
                 "complexity": t.get("complexity"),
                 "location": t.get("location"),
                 "experience": t.get("experience"),
+                "experience": t.get("experience"),
                 "skills": t.get("skills", []),
                 "status": t.get("status"),
+                "comment": t.get("comment", ""),
+                "feedback": t.get("feedback", ""),
                 "created_at": t.get("created_at", "").isoformat() if t.get("created_at") else "",
                 "completed_at": t.get("completed_at", "").isoformat() if t.get("completed_at") else ""
             }
@@ -525,6 +528,11 @@ class DailyGuidanceAgent:
             "status": "pending"
         }))
         
+        in_progress_tasks = list(db.tasks.find({
+            "$or": [{"user_id": user_id}, {"assigned_to": user_id}],
+            "status": "in_progress"
+        }))
+        
         user = db.users.find_one({"_id": ObjectId(user_id)})
         username = user.get("username", "Recruiter") if user else "Recruiter"
 
@@ -534,9 +542,10 @@ class DailyGuidanceAgent:
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Recruiter: {username}
 
-📊 PENDING TASKS SUMMARY
+📊 TASKS SUMMARY
 {'=' * 50}
 Total Pending Tasks: {len(pending_tasks)}
+Total In-Progress Tasks: {len(in_progress_tasks)}
 
 """
 
@@ -560,8 +569,14 @@ Total Pending Tasks: {len(pending_tasks)}
                 report += f"\n🟢 FLEXIBLE ({len(flexible)} tasks):\n"
                 for t in flexible[:5]:
                     report += f"  • {t.get('title')} - [{t.get('priority')} Priority]\n"
-        else:
-            report += "\n✅ No pending tasks! Great job!\n"
+        
+        if in_progress_tasks:
+            report += f"\n⚙️ IN PROGRESS ({len(in_progress_tasks)} tasks):\n"
+            for t in in_progress_tasks[:10]:
+                report += f"  • {t.get('title')} - [{t.get('priority')} Priority]\n"
+        
+        if not pending_tasks and not in_progress_tasks:
+            report += "\n✅ No pending or in-progress tasks! Great job!\n"
 
         report += f"\n{'=' * 50}\n"
         report += "Next Steps: Complete urgent tasks and update status.\n"
@@ -615,6 +630,8 @@ class CreateAndAssignTaskRequest(BaseModel):
     location: str = "Remote"
     experience: str = "Unknown"
     skills: List[str] = []
+    comment: str = ""
+    feedback: str = ""
 
 class TaskAssignmentRequest(BaseModel):
     """Task assignment request"""
@@ -652,12 +669,13 @@ class AdminAuthManager:
     @staticmethod
     def create_admin(username: str, password: str, email: str) -> Dict:
         """Create new admin user"""
-        if db.admin_users.find_one({"username": username}):
+        username = username.strip()
+        if db.admin_users.find_one({"username": {"$regex": f"^{re.escape(username)}$", "$options": "i"}}):
             return {"success": False, "message": "Admin already exists"}
         
         admin_doc = {
             "username": username,
-            "password": hash_password(password),
+            "password_hash": hash_password(password.strip()),
             "email": email,
             "role": "admin",
             "created_at": datetime.utcnow(),
@@ -675,9 +693,13 @@ class AdminAuthManager:
     @staticmethod
     def authenticate_admin(username: str, password: str) -> Optional[Dict]:
         """Authenticate admin user"""
-        admin = db.admin_users.find_one({"username": username})
+        username = username.strip()
+        admin = db.admin_users.find_one({"username": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
         
-        if not admin or not verify_password(password, admin["password"]):
+        # Fallback to legacy 'password' key if 'password_hash' is missing
+        password_hash = admin.get("password_hash") or admin.get("password")
+        
+        if not admin or not verify_password(password.strip(), password_hash):
             return None
         
         # Update last login
@@ -1650,6 +1672,12 @@ class MasterAgent:
             "$or": [{"user_id": user_id}, {"assigned_to": user_id}],
             "status": "pending"
         }))
+
+        # In Progress tasks
+        in_progress_tasks = list(self.db.tasks.find({
+            "$or": [{"user_id": user_id}, {"assigned_to": user_id}],
+            "status": "in_progress"
+        }))
         
         # Pending interviews
         pending_interviews = self.interview_email_agent.get_pending_interviews(user_id)
@@ -1717,7 +1745,12 @@ class MasterAgent:
                  report += f"\n🟢 LOW PRIORITY ({len(low_pri)}):\n"
                  report += f"  • {len(low_pri)} low priority tasks pending.\n"
 
-        else:
+        if in_progress_tasks:
+            report += f"\n⚙️ IN PROGRESS TASKS ({len(in_progress_tasks)} tasks):\n"
+            for t in in_progress_tasks[:10]:
+                report += f"  • {t.get('title')} ({t.get('priority')} Priority)\n"
+
+        if not pending_tasks and not in_progress_tasks:
             report += "  ✅ All tasks completed!\n"
 
         report += f"""
@@ -1780,6 +1813,31 @@ class CandidateRequest(BaseModel):
     notes: str = ""
     status: str = "applied" # Added status field
 
+class RecruiterFeedback(BaseModel):
+    task_id: str
+    recruiter_id: str
+    status: str  # e.g., "pending", "in_progress", "completed", "on_hold", "rejected"
+    feedback: str  # Comments/notes from recruiter
+    rating: Optional[int] = None  # 1-5 rating (optional)
+    candidate_id: Optional[str] = None  # Link to specific candidate
+
+class RecruiterComment(BaseModel):
+    task_id: str
+    recruiter_id: str
+    candidate_id: Optional[str] = None
+    comment: str  # Comment text from recruiter
+    type: str = "comment"  # "comment" or "observation"
+
+class AdminReply(BaseModel):
+    feedback_id: str
+    reply: str  # Admin's reply to feedback
+
+
+class FeedbackUpdate(BaseModel):
+    feedback_id: str
+    status: str
+    feedback: str
+    rating: Optional[int] = None
 
 # ============================================================
 # ROUTES - AUTH
@@ -1794,12 +1852,13 @@ def health():
 @app.post("/api/register")
 def register(req: RegisterRequest):
     """Register new user"""
-    if db.users.find_one({"username": req.username}):
+    username = req.username.strip()
+    if db.users.find_one({"username": {"$regex": f"^{re.escape(username)}$", "$options": "i"}}):
         raise HTTPException(400, "User already exists")
 
     user_doc = {
-        "username": req.username,
-        "password": hash_password(req.password),
+        "username": username,
+        "password_hash": hash_password(req.password.strip()),
         "email": req.email,
         "role": "recruiter",
         "created_at": datetime.utcnow()
@@ -1820,8 +1879,13 @@ def register(req: RegisterRequest):
 @app.post("/api/login")
 def login(req: LoginRequest):
     """Login user"""
-    user = db.users.find_one({"username": req.username})
-    if not user or not verify_password(req.password, user["password_hash"]):
+    username = req.username.strip()
+    user = db.users.find_one({"username": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
+    
+    # Fallback to legacy 'password' key if 'password_hash' is missing
+    password_hash = user.get("password_hash") or user.get("password") if user else None
+    
+    if not user or not verify_password(req.password.strip(), password_hash):
         raise HTTPException(401, "Invalid credentials")
 
     # Track login
@@ -1873,6 +1937,8 @@ def dashboard(current_user=Depends(get_current_user)):
             "priority": t.get("priority"),
             "urgency": t.get("urgency"),
             "status": t.get("status"),
+            "comment": t.get("comment", ""),
+            "feedback": t.get("feedback", ""),
             "created_at": t.get("created_at", "").isoformat() if t.get("created_at") else ""
         }
         for t in recent_tasks
@@ -2273,6 +2339,524 @@ def pending_interviews(current_user=Depends(get_current_user)):
         "user_id": current_user["id"]
     })
 
+@app.post("/api/admin/feedback/submit")
+def submit_recruiter_feedback(
+    request: RecruiterFeedback,
+    current_user=Depends(get_current_user)
+):
+    """Recruiter submits feedback/status on a task"""
+    try:
+        if current_user["id"] != request.recruiter_id and current_user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Cannot submit feedback for others")
+        
+        feedback_doc = {
+            "task_id": ObjectId(request.task_id),
+            "recruiter_id": request.recruiter_id,
+            "recruiter_name": db.users.find_one({"_id": ObjectId(request.recruiter_id)}).get("username", "Unknown"),
+            "status": request.status,
+            "feedback": request.feedback,
+            "rating": request.rating,
+            "submitted_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+        
+        result = db.recruiter_feedback.insert_one(feedback_doc)
+        
+        db.tasks.update_one(
+            {"_id": ObjectId(request.task_id)},
+            {
+                "$set": {
+                    "last_feedback_status": request.status,
+                    "last_feedback_date": datetime.utcnow()
+                }
+            }
+        )
+        
+        return {
+            "success": True,
+            "message": "Feedback submitted successfully",
+            "feedback_id": str(result.inserted_id)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/feedback/dashboard")
+def get_feedback_dashboard(current_user=Depends(get_current_user)):
+    """Get all feedback for admin dashboard"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        feedback_list = list(db.recruiter_feedback.aggregate([
+            {
+                "$sort": {"submitted_at": -1}
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "task_id": "$task_id",
+                        "recruiter_id": "$recruiter_id"
+                    },
+                    "latest_feedback": {"$first": "$$ROOT"},
+                    "feedback_count": {"$sum": 1}
+                }
+            },
+            {
+                "$sort": {"latest_feedback.submitted_at": -1}
+            }
+        ]))
+        
+        result = []
+        for item in feedback_list:
+            task_id = item["_id"]["task_id"]
+            recruiter_id = item["_id"]["recruiter_id"]
+            feedback = item["latest_feedback"]
+            
+            task = db.tasks.find_one({"_id": task_id})
+            recruiter = db.users.find_one({"_id": ObjectId(recruiter_id)})
+            related_comments = list(db.recruiter_comments.find(
+                {"task_id": task_id, "recruiter_id": recruiter_id}
+            ))
+            result.append({
+                "feedback_id": str(feedback["_id"]),
+                "task_id": str(task_id),
+                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
+                "recruiter_id": recruiter_id,
+                "recruiter_name": feedback.get("recruiter_name", "Unknown"),
+                "status": feedback.get("status", "pending"),
+                "feedback": feedback.get("feedback", ""),
+                "rating": feedback.get("rating"),
+                "submitted_at": safe_isoformat(feedback.get("submitted_at")),
+                "feedback_count": item.get("feedback_count" ,0),
+                "comments": [
+                    {
+                        "comment_id": str(c["_id"]),
+                        "comment": c.get("comment", ""),
+                        "type": c.get("type", "comment"),
+                        "submitted_at": safe_isoformat(c.get("submitted_at")),
+                        "admin_reply": c.get("admin_reply"),
+                        "status": c.get("status", "unread")
+                    }
+                    for c in related_comments
+                ],
+                "comment_count": len(related_comments)
+            })
+        
+        return {
+            "success": True,
+            "total_feedbacks": len(result),
+            "feedbacks": result
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/feedback/by-task/{task_id}")
+def get_task_feedback(task_id: str, current_user=Depends(get_current_user)):
+    """Get all feedback for a specific task"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        feedback_list = list(db.recruiter_feedback.find(
+            {"task_id": ObjectId(task_id)},
+            sort=[("submitted_at", -1)]
+        ))
+        
+        task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "task_name": task.get("title", "Unknown") if task else "Unknown",
+            "total_feedback_entries": len(feedback_list),
+            "feedbacks": [
+                {
+                    "feedback_id": str(f["_id"]),
+                    "recruiter_id": f.get("recruiter_id"),
+                    "recruiter_name": f.get("recruiter_name"),
+                    "status": f.get("status"),
+                    "feedback": f.get("feedback"),
+                    "rating": f.get("rating"),
+                    "submitted_at": safe_isoformat(f.get("submitted_at"))
+                }
+                for f in feedback_list
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/feedback/by-recruiter/{recruiter_id}")
+def get_recruiter_feedbacks(recruiter_id: str, current_user=Depends(get_current_user)):
+    """Get all feedback submitted by a specific recruiter"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        feedback_list = list(db.recruiter_feedback.find(
+            {"recruiter_id": recruiter_id},
+            sort=[("submitted_at", -1)]
+        ))
+        
+        recruiter = db.users.find_one({"_id": ObjectId(recruiter_id)})
+        
+        enriched_feedback = []
+        for f in feedback_list:
+            task = db.tasks.find_one({"_id": f["task_id"]})
+            enriched_feedback.append({
+                "feedback_id": str(f["_id"]),
+                "task_id": str(f["task_id"]),
+                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
+                "status": f.get("status"),
+                "feedback": f.get("feedback"),
+                "rating": f.get("rating"),
+                "submitted_at": safe_isoformat(f.get("submitted_at"))
+            })
+        
+        return {
+            "success": True,
+            "recruiter_id": recruiter_id,
+            "recruiter_name": recruiter.get("username", "Unknown") if recruiter else "Unknown",
+            "total_feedbacks": len(enriched_feedback),
+            "feedbacks": enriched_feedback
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/recruiter/comment/submit")
+def submit_recruiter_comment(
+    request: RecruiterComment,
+    current_user=Depends(get_current_user)
+):
+    """Recruiter submits a comment on a task/candidate"""
+    try:
+        if current_user["id"] != request.recruiter_id and current_user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Cannot submit comment for others")
+        
+        recruiter = db.users.find_one({"_id": ObjectId(request.recruiter_id)})
+        
+        comment_doc = {
+            "task_id": ObjectId(request.task_id),
+            "recruiter_id": request.recruiter_id,
+            "recruiter_name": recruiter.get("username", "Unknown") if recruiter else "Unknown",
+            "candidate_id": ObjectId(request.candidate_id) if request.candidate_id else None,
+            "comment": request.comment,
+            "type": request.type,
+            "submitted_at": datetime.utcnow(),
+            "status": "unread",
+            "admin_reply": None,
+            "admin_replied_at": None
+        }
+        
+        result = db.recruiter_comments.insert_one(comment_doc)
+        
+        return {
+            "success": True,
+            "message": "Comment submitted successfully",
+            "comment_id": str(result.inserted_id)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/recruiter/comments/task/{task_id}")
+def get_task_comments(task_id: str, current_user=Depends(get_current_user)):
+    """Get all comments for a task"""
+    try:
+        comments_list = list(db.recruiter_comments.find(
+            {"task_id": ObjectId(task_id)},
+            sort=[("submitted_at", -1)]
+        ))
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "total_comments": len(comments_list),
+            "comments": [
+                {
+                    "comment_id": str(c["_id"]),
+                    "recruiter_name": c.get("recruiter_name", "Unknown"),
+                    "recruiter_id": c.get("recruiter_id"),
+                    "comment": c.get("comment"),
+                    "type": c.get("type", "comment"),
+                    "submitted_at": safe_isoformat(c.get("submitted_at")),
+                    "admin_reply": c.get("admin_reply"),
+                    "admin_replied_at": safe_isoformat(c.get("admin_replied_at")) if c.get("admin_replied_at") else None,
+                    "status": c.get("status", "unread")
+                }
+                for c in comments_list
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/all-comments")
+def get_all_comments(current_user=Depends(get_current_user)):
+    """Get all comments for admin dashboard"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        comments_list = list(db.recruiter_comments.aggregate([
+            {
+                "$sort": {"submitted_at": -1}
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "task_id": "$task_id",
+                        "recruiter_id": "$recruiter_id"
+                    },
+                    "latest_comment": {"$first": "$$ROOT"},
+                    "comment_count": {"$sum": 1}
+                }
+            },
+            {
+                "$sort": {"latest_comment.submitted_at": -1}
+            }
+        ]))
+        
+        result = []
+        for item in comments_list:
+            task_id = item["_id"]["task_id"]
+            recruiter_id = item["_id"]["recruiter_id"]
+            comment = item["latest_comment"]
+            
+            task = db.tasks.find_one({"_id": task_id})
+            
+            result.append({
+                "comment_id": str(comment["_id"]),
+                "task_id": str(task_id),
+                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
+                "recruiter_id": recruiter_id,
+                "recruiter_name": comment.get("recruiter_name", "Unknown"),
+                "comment": comment.get("comment", ""),
+                "type": comment.get("type", "comment"),
+                "submitted_at": safe_isoformat(comment.get("submitted_at")),
+                "admin_reply": comment.get("admin_reply"),
+                "admin_replied_at": safe_isoformat(comment.get("admin_replied_at")) if comment.get("admin_replied_at") else None,
+                "status": comment.get("status", "unread"),
+                "comment_count": item.get("comment_count", 0)
+            })
+        
+        return {
+            "success": True,
+            "total_comments": len(result),
+            "comments": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/comment/reply/{comment_id}")
+def reply_to_comment(
+    comment_id: str,
+    request: AdminReply,
+    current_user=Depends(get_current_user)
+):
+    """Admin replies to a recruiter comment"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        result = db.recruiter_comments.update_one(
+            {"_id": ObjectId(comment_id)},
+            {
+                "$set": {
+                    "admin_reply": request.reply,
+                    "admin_replied_at": datetime.utcnow(),
+                    "status": "replied"
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        
+        return {
+            "success": True,
+            "message": "Reply added successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/comments-summary")
+def get_comments_summary(current_user=Depends(get_current_user)):
+    """Get summary of comments"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        summary = list(db.recruiter_comments.aggregate([
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1}
+                }
+            }
+        ]))
+        
+        status_counts = {item["_id"]: item["count"] for item in summary}
+        
+        return {
+            "success": True,
+            "status_summary": status_counts,
+            "total_comments": sum(status_counts.values()),
+            "unread_count": status_counts.get("unread", 0)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/feedback/status-summary")
+def get_feedback_status_summary(current_user=Depends(get_current_user)):
+    """Get summary of feedback statuses"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        summary = list(db.recruiter_feedback.aggregate([
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1}
+                }
+            },
+            {
+                "$sort": {"count": -1}
+            }
+        ]))
+        
+        status_counts = {item["_id"]: item["count"] for item in summary}
+        
+        return {
+            "success": True,
+            "status_summary": status_counts,
+            "total_feedbacks": sum(status_counts.values()),
+            "average_rating": db.recruiter_feedback.aggregate([
+                {
+                    "$match": {"rating": {"$exists": True, "$ne": None}}
+                },
+                {
+                    "$group": {
+                        "_id": None,
+                        "avg_rating": {"$avg": "$rating"}
+                    }
+                }
+            ]).next() if db.recruiter_feedback.count_documents({"rating": {"$exists": True, "$ne": None}}) > 0 else {"avg_rating": 0}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/admin/feedback/{feedback_id}")
+def update_feedback(
+    feedback_id: str,
+    request: FeedbackUpdate,
+    current_user=Depends(get_current_user)
+):
+    """Admin can update feedback status and notes"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        result = db.recruiter_feedback.update_one(
+            {"_id": ObjectId(feedback_id)},
+            {
+                "$set": {
+                    "status": request.status,
+                    "feedback": request.feedback,
+                    "rating": request.rating,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Feedback not found")
+        
+        return {
+            "success": True,
+            "message": "Feedback updated successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/feedback/{feedback_id}")
+def delete_feedback(
+    feedback_id: str,
+    current_user=Depends(get_current_user)
+):
+    """Admin can delete feedback entries"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        result = db.recruiter_feedback.delete_one({"_id": ObjectId(feedback_id)})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Feedback not found")
+        
+        return {
+            "success": True,
+            "message": "Feedback deleted successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/feedback/filter")
+def filter_feedback(
+    task_id: Optional[str] = None,
+    recruiter_id: Optional[str] = None,
+    status: Optional[str] = None,
+    current_user=Depends(get_current_user)
+):
+    """Filter feedback with multiple criteria"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        query = {}
+        
+        if task_id:
+            query["task_id"] = ObjectId(task_id)
+        if recruiter_id:
+            query["recruiter_id"] = recruiter_id
+        if status:
+            query["status"] = status
+        
+        feedback_list = list(db.recruiter_feedback.find(query).sort("submitted_at", -1))
+        
+        enriched_feedback = []
+        for f in feedback_list:
+            task = db.tasks.find_one({"_id": f["task_id"]})
+            enriched_feedback.append({
+                "feedback_id": str(f["_id"]),
+                "task_id": str(f["task_id"]),
+                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
+                "recruiter_id": f.get("recruiter_id"),
+                "recruiter_name": f.get("recruiter_name"),
+                "status": f.get("status"),
+                "feedback": f.get("feedback"),
+                "rating": f.get("rating"),
+                "submitted_at": safe_isoformat(f.get("submitted_at"))
+            })
+        
+        return {
+            "success": True,
+            "filters_applied": query,
+            "total_results": len(enriched_feedback),
+            "feedbacks": enriched_feedback
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ============================================================
 # ROUTES - EOD SUMMARY
 # ============================================================
@@ -2529,6 +3113,8 @@ def create_assign_task(
         "experience": request.experience,
         "skills": request.skills,
         "status": "pending",
+        "comment": request.comment,
+        "feedback": request.feedback,
         "assigned_to": request.recruiter_ids, # List of IDs
         "assigned_at": datetime.utcnow(),
         "created_at": datetime.utcnow()
