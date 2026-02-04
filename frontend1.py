@@ -80,6 +80,14 @@ st.markdown("""
         border-radius: 5px;
         margin: 10px 0;
     }
+    div[data-testid="stToast"] {
+        background-color: #e3f2fd !important;
+        color: #0d47a1 !important;
+        border: 1px solid #bbdefb !important;
+    }
+    div[data-testid="stToast"] p {
+        color: #0d47a1 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 # Custom CSS
@@ -298,12 +306,14 @@ def show_admin_login():
                         
                         if "error" not in result and result.get("is_admin"):
                             st.session_state.admin_token = result["access_token"]
-                            st.session_state.admin_user = result["admin"]
+                            st.session_state.admin_user = result.get("admin") # Use 'admin' key for admin login
                             st.session_state.page = "dashboard"
-                            st.success("✅ Login successful!")
+                            st.toast("✅ Admin login successful!", icon="🔐")
                             st.rerun()
                         else:
-                            st.error("❌ Invalid admin credentials. Please try again.")
+                            st.error(f"❌ Login failed: {result.get('error', 'Unknown error')}")
+                            st.toast("❌ Admin login failed!", icon="⚠️")
+                            st.rerun()
         
         st.divider()
         
@@ -324,6 +334,8 @@ def show_admin_login():
 
 def login(username: str, password: str) -> bool:
     """Login"""
+    username = username.strip()
+    password = password.strip()
     result = api_request("POST", "/api/login", {"username": username, "password": password})
     
     if "error" in result:
@@ -340,6 +352,8 @@ def login(username: str, password: str) -> bool:
 
 def register(username: str, password: str, email: str) -> bool:
     """Register"""
+    username = username.strip()
+    password = password.strip()
     result = api_request("POST", "/api/register", {"username": username, "password": password, "email": email})
     
     if "error" in result:
@@ -478,10 +492,18 @@ def get_eod_summary() -> Dict:
 
 def show_admin_dashboard():
     """Show admin dashboard"""
+    # Safety check for session state
+    if not st.session_state.get("admin_user"):
+        st.error("⚠️ Session expired. Please login again.")
+        if st.button("Back to Login"):
+            logout()
+            st.rerun()
+        st.stop()
+
     # Sidebar
     with st.sidebar:
-        st.markdown(f"### 🔐 Admin: {st.session_state.admin_user['username']}")
-        st.markdown(f"📧 {st.session_state.admin_user['email']}")
+        st.markdown(f"### 🔐 Admin: {st.session_state.admin_user.get('username', 'Admin')}")
+        st.markdown(f"📧 {st.session_state.admin_user.get('email', 'N/A')}")
         st.divider()
         
         page = st.radio(
@@ -497,12 +519,466 @@ def show_admin_dashboard():
             st.session_state.admin_user = None
             st.session_state.page = "login"
             st.rerun()
+def show_recruiter_feedback_dashboard():
+    """Admin dashboard for viewing recruiter feedback and status"""
+    st.markdown("## 📋 Recruiter Feedback & Status Dashboard")
+    st.info("View feedback from recruiters on assigned tasks. Filter by task, recruiter, or status.")
     
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Feedback Overview",
+        "📝 Submit/View Feedback",
+        "🔍 Filter & Search",
+        "📈 Analytics"
+    ])
+    
+    with tab1:
+        st.subheader("Feedback Summary")
+        
+        try:
+            summary = api_request("GET", "/api/admin/feedback/status-summary")
+            
+            if summary.get("success"):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Total Feedbacks", summary.get("total_feedbacks", 0), delta="feedback entries")
+                
+                with col2:
+                    avg_rating = summary.get("average_rating", {}).get("avg_rating", 0)
+                    if avg_rating:
+                        st.metric("Avg Rating", f"{avg_rating:.1f}/5", delta="⭐ out of 5")
+                    else:
+                        st.metric("Avg Rating", "N/A", delta="no ratings yet")
+                
+                with col3:
+                    status_data = summary.get("status_summary", {})
+                    pending_count = status_data.get("pending", 0)
+                    st.metric("Pending Items", pending_count, delta="awaiting attention")
+                
+                st.divider()
+                
+                if status_data:
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        import plotly.graph_objects as go
+                        
+                        statuses = list(status_data.keys())
+                        counts = list(status_data.values())
+                        
+                        color_map = {
+                            "pending": "#FF9800",
+                            "in_progress": "#2196F3",
+                            "completed": "#4CAF50",
+                            "on_hold": "#9C27B0",
+                            "rejected": "#F44336"
+                        }
+                        colors = [color_map.get(status, "#757575") for status in statuses]
+                        
+                        fig = go.Figure(data=[
+                            go.Bar(
+                                x=statuses,
+                                y=counts,
+                                marker_color=colors,
+                                text=counts,
+                                textposition='auto',
+                            )
+                        ])
+                        fig.update_layout(
+                            title="Feedback by Status",
+                            xaxis_title="Status",
+                            yaxis_title="Count",
+                            height=400
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    with col2:
+                        st.subheader("Status Breakdown")
+                        for status, count in status_data.items():
+                            st.write(f"• **{status.upper()}**: {count}")
+        
+        except Exception as e:
+            st.error(f"Error fetching summary: {e}")
+        
+        st.divider()
+        st.subheader("All Feedback Entries")
+        
+        try:
+            dashboard = api_request("GET", "/api/admin/feedback/dashboard")
+            
+            if dashboard.get("success"):
+                feedbacks = dashboard.get("feedbacks", [])
+                
+                if feedbacks:
+                    df_data = []
+                    for fb in feedbacks:
+                        df_data.append({
+                            "Task": fb.get("task_name", "Unknown")[:30],
+                            "Recruiter": fb.get("recruiter_name", "Unknown"),
+                            "Status": fb.get("status", "pending").upper(),
+                            "Rating": "⭐" * fb.get("rating", 0) if fb.get("rating") else "N/A",
+                            "Feedback": fb.get("feedback", "")[:50] + "..." if len(fb.get("feedback", "")) > 50 else fb.get("feedback", ""),
+                            "Submitted": fb.get("submitted_at", "")[:10] if fb.get("submitted_at") else "N/A",
+                            "Entries": fb.get("feedback_count", 1)
+                        })
+                    
+                    df = pd.DataFrame(df_data)
+                    st.dataframe(df, use_container_width=True)
+                    
+                    st.subheader("Detailed View")
+                    
+                    for fb in feedbacks:
+                        with st.expander(f"📌 {fb['task_name']} - {fb['recruiter_name']}", expanded=False):
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.write(f"**Task ID:** {fb['task_id']}")
+                                st.write(f"**Recruiter ID:** {fb['recruiter_id']}")
+                            
+                            with col2:
+                                status_color = {
+                                    "pending": "🟠",
+                                    "in_progress": "🔵",
+                                    "completed": "🟢",
+                                    "on_hold": "🟣",
+                                    "rejected": "🔴"
+                                }
+                                status_emoji = status_color.get(fb['status'], "⚪")
+                                st.write(f"**Status:** {status_emoji} {fb['status'].upper()}")
+                                if fb.get('rating'):
+                                    st.write(f"**Rating:** {'⭐' * fb['rating']}")
+                            
+                            with col3:
+                                st.write(f"**Submitted:** {fb['submitted_at']}")
+                                st.write(f"**Total Entries:** {fb['feedback_count']}")
+                            
+                            st.write("---")
+                            st.write(f"**Feedback/Comments:**\n\n{fb['feedback']}")
+                else:
+                    st.info("No feedback entries found yet")
+        
+        except Exception as e:
+            st.error(f"Error fetching feedback: {e}")
+    
+    with tab2:
+        st.subheader("Feedback Management")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 📝 Submit Feedback")
+            
+            try:
+                all_tasks = get_tasks() or []
+                task_options = {t['id']: t['title'] for t in all_tasks}
+                
+                if task_options:
+                    selected_task = st.selectbox(
+                        "Select Task",
+                        options=list(task_options.keys()),
+                        format_func=lambda x: task_options[x],
+                        key="fb_task_select"
+                    )
+                    
+                    task_data = next((t for t in all_tasks if t['id'] == selected_task), None)
+                    
+                    if task_data:
+                        assigned_recruiters = task_data.get('assigned_to', [])
+                        
+                        if assigned_recruiters:
+                            selected_recruiter = st.selectbox(
+                                "Recruiter Submitting Feedback",
+                                options=assigned_recruiters,
+                                key="fb_recruiter_select"
+                            )
+                            
+                            recruiter_data = api_request("GET", f"/api/admin/recruiter/{selected_recruiter}")
+                            recruiter_name = recruiter_data.get("recruiter", {}).get("name", "Unknown")
+                            
+                            st.write(f"**Recruiter:** {recruiter_name}")
+                            
+                            with st.form("submit_feedback_form"):
+                                status_options = ["pending", "in_progress", "completed", "on_hold", "rejected"]
+                                selected_status = st.selectbox(
+                                    "Current Status",
+                                    options=status_options,
+                                    key="fb_status"
+                                )
+                                
+                                feedback_text = st.text_area(
+                                    "Feedback/Comments",
+                                    height=150,
+                                    placeholder="Enter your feedback, comments, or observations...",
+                                    key="fb_text"
+                                )
+                                
+                                rating = st.slider(
+                                    "Rating (Optional)",
+                                    min_value=0,
+                                    max_value=5,
+                                    value=0,
+                                    help="0 = No rating, 5 = Excellent",
+                                    key="fb_rating"
+                                )
+                                
+                                if st.form_submit_button("✅ Submit Feedback"):
+                                    if feedback_text.strip():
+                                        payload = {
+                                            "task_id": selected_task,
+                                            "recruiter_id": selected_recruiter,
+                                            "status": selected_status,
+                                            "feedback": feedback_text,
+                                            "rating": rating if rating > 0 else None
+                                        }
+                                        
+                                        with st.spinner("Submitting feedback..."):
+                                            result = api_request("POST", "/api/admin/feedback/submit", payload)
+                                        
+                                        if result.get("success"):
+                                            st.success("✅ Feedback submitted successfully!")
+                                            st.balloons()
+                                            st.toast("Feedback saved!", icon="✅")
+                                        else:
+                                            st.error(f"❌ Error: {result.get('detail', 'Unknown error')}")
+                                    else:
+                                        st.warning("⚠️ Please enter feedback text")
+                        else:
+                            st.info("No recruiters assigned to this task")
+                else:
+                    st.info("No tasks available")
+            
+            except Exception as e:
+                st.error(f"Error: {e}")
+        
+        with col2:
+            st.markdown("### 🔍 View Feedback by Task")
+            
+            try:
+                all_tasks = get_tasks() or []
+                task_options = {t['id']: t['title'] for t in all_tasks}
+                
+                if task_options:
+                    selected_task = st.selectbox(
+                        "Select Task to View",
+                        options=list(task_options.keys()),
+                        format_func=lambda x: task_options[x],
+                        key="view_fb_task"
+                    )
+                    
+                    with st.spinner("Fetching feedback..."):
+                        task_fb = api_request("GET", f"/api/admin/feedback/by-task/{selected_task}")
+                    
+                    if task_fb.get("success"):
+                        feedbacks = task_fb.get("feedbacks", [])
+                        st.write(f"**Total Feedback Entries:** {task_fb.get('total_feedback_entries', 0)}")
+                        
+                        if feedbacks:
+                            for fb in feedbacks:
+                                with st.expander(
+                                    f"👤 {fb['recruiter_name']} - {fb['status'].upper()}",
+                                    expanded=False
+                                ):
+                                    col_a, col_b = st.columns(2)
+                                    
+                                    with col_a:
+                                        st.write(f"**Recruiter:** {fb['recruiter_name']}")
+                                        st.write(f"**Status:** {fb['status'].upper()}")
+                                    
+                                    with col_b:
+                                        if fb.get('rating'):
+                                            st.write(f"**Rating:** {'⭐' * fb['rating']}")
+                                        st.write(f"**Date:** {fb['submitted_at'][:10]}")
+                                    
+                                    st.write("---")
+                                    st.write(f"{fb['feedback']}")
+                        else:
+                            st.info("No feedback yet for this task")
+                else:
+                    st.info("No tasks available")
+            
+            except Exception as e:
+                st.error(f"Error: {e}")
+    
+    with tab3:
+        st.subheader("Advanced Filters")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            filter_task = st.text_input("Filter by Task ID (optional):", "")
+        
+        with col2:
+            filter_recruiter = st.text_input("Filter by Recruiter ID (optional):", "")
+        
+        with col3:
+            status_options = ["All", "pending", "in_progress", "completed", "on_hold", "rejected"]
+            filter_status = st.selectbox("Filter by Status:", status_options)
+        
+        if st.button("🔍 Apply Filters"):
+            params = {}
+            if filter_task.strip():
+                params["task_id"] = filter_task.strip()
+            if filter_recruiter.strip():
+                params["recruiter_id"] = filter_recruiter.strip()
+            if filter_status != "All":
+                params["status"] = filter_status
+            
+            with st.spinner("Filtering feedback..."):
+                result = api_request("GET", "/api/admin/feedback/filter", params=params)
+            
+            if result.get("success"):
+                feedbacks = result.get("feedbacks", [])
+                st.success(f"Found {len(feedbacks)} results")
+                
+                if feedbacks:
+                    for fb in feedbacks:
+                        with st.expander(
+                            f"📋 {fb['task_name']} | 👤 {fb['recruiter_name']} | {fb['status'].upper()}",
+                            expanded=False
+                        ):
+                            col_x, col_y, col_z = st.columns(3)
+                            
+                            with col_x:
+                                st.write(f"**Task ID:** {fb['task_id']}")
+                                st.write(f"**Task:** {fb['task_name']}")
+                            
+                            with col_y:
+                                st.write(f"**Recruiter:** {fb['recruiter_name']}")
+                                st.write(f"**Recruiter ID:** {fb['recruiter_id']}")
+                            
+                            with col_z:
+                                st.write(f"**Status:** {fb['status']}")
+                                if fb.get('rating'):
+                                    st.write(f"**Rating:** {'⭐' * fb['rating']}")
+                            
+                            st.write("---")
+                            st.write(f"**Feedback:**\n\n{fb['feedback']}")
+                            st.write(f"*Submitted: {fb['submitted_at']}*")
+            else:
+                st.error(f"Error: {result.get('detail', 'Unknown error')}")
+    
+    with tab4:
+        st.subheader("Feedback Analytics")
+        
+        try:
+            summary = api_request("GET", "/api/admin/feedback/status-summary")
+            dashboard = api_request("GET", "/api/admin/feedback/dashboard")
+            
+            if summary.get("success") and dashboard.get("success"):
+                feedbacks = dashboard.get("feedbacks", [])
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    status_data = summary.get("status_summary", {})
+                    if status_data:
+                        import plotly.graph_objects as go
+                        
+                        fig = go.Figure(data=[go.Pie(
+                            labels=list(status_data.keys()),
+                            values=list(status_data.values()),
+                            hole=0.3
+                        )])
+                        fig.update_layout(title="Status Distribution", height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    ratings_data = {}
+                    for fb in feedbacks:
+                        rating = fb.get('rating')
+                        if rating:
+                            ratings_data[f"{rating}⭐"] = ratings_data.get(f"{rating}⭐", 0) + 1
+                    
+                    if ratings_data:
+                        fig = go.Figure(data=[go.Bar(
+                            x=list(ratings_data.keys()),
+                            y=list(ratings_data.values()),
+                            marker_color='indianred'
+                        )])
+                        fig.update_layout(title="Rating Distribution", xaxis_title="Rating", yaxis_title="Count", height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                st.divider()
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total Feedbacks", summary.get("total_feedbacks", 0))
+                
+                with col2:
+                    completed = summary.get("status_summary", {}).get("completed", 0)
+                    st.metric("Completed", completed)
+                
+                with col3:
+                    pending = summary.get("status_summary", {}).get("pending", 0)
+                    st.metric("Pending", pending)
+                
+                with col4:
+                    in_progress = summary.get("status_summary", {}).get("in_progress", 0)
+                    st.metric("In Progress", in_progress)
+                
+                st.divider()
+                st.subheader("Top Recruiters by Feedback Count")
+                
+                recruiter_counts = {}
+                for fb in feedbacks:
+                    recruiter = fb['recruiter_name']
+                    recruiter_counts[recruiter] = recruiter_counts.get(recruiter, 0) + fb.get('feedback_count', 1)
+                
+                if recruiter_counts:
+                    sorted_recruiters = sorted(recruiter_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+                    
+                    df_top = pd.DataFrame(sorted_recruiters, columns=["Recruiter", "Feedback Count"])
+                    
+                    fig = go.Figure(data=[go.Bar(
+                        x=df_top['Recruiter'],
+                        y=df_top['Feedback Count'],
+                        marker_color='lightblue'
+                    )])
+                    fig.update_layout(title="Top Recruiters by Feedback Count", xaxis_title="Recruiter", yaxis_title="Feedback Count", height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        except Exception as e:
+            st.error(f"Error loading analytics: {e}")
+
+
+def show_admin_dashboard():
+    """Show admin dashboard"""
+    # Safety check for session state
+    if not st.session_state.get("admin_user"):
+        st.error("⚠️ Session expired. Please login again.")
+        if st.button("Back to Login"):
+            logout()
+            st.rerun()
+        st.stop()
+
+    # Sidebar
+    with st.sidebar:
+        st.markdown(f"### 🔐 Admin: {st.session_state.admin_user.get('username', 'Admin')}")
+        st.markdown(f"📧 {st.session_state.admin_user.get('email', 'N/A')}")
+        st.divider()
+        
+        page = st.radio(
+            "Navigation",
+            ["📊 Dashboard", "👥 Recruiters", "📋 Feedback", "🕐 Activity Logs", "📈 Workload Report", "⚙️ Settings"],
+            key="admin_page"
+        )
+        
+        st.divider()
+        if st.button("🚪 Logout", use_container_width=True):
+            logout()
+            st.session_state.admin_token = None
+            st.session_state.admin_user = None
+            st.session_state.page = "login"
+            st.rerun()
+        
     # Main content
     if page == "📊 Dashboard":
         show_dashboard_main()
     elif page == "👥 Recruiters":
         show_recruiters_page()
+    elif page == "📋 Feedback":
+        show_recruiter_feedback_dashboard()
     elif page == "🕐 Activity Logs":
         show_activity_logs()
     elif page == "📈 Workload Report":
@@ -831,10 +1307,12 @@ def show_recruiters_page():
                             
                             if "success" in result and result["success"]:
                                 st.success(f"✅ Task assigned to {len(selected_recruiters)} recruiters")
+                                st.toast(f"✅ Task assigned to {len(selected_recruiters)} recruiters!", icon="✅")
                                 get_admin_dashboard_data.clear()
                                 st.rerun()
                             else:
                                 st.error(f"❌ Error: {result.get('message', result.get('error'))}")
+                                st.toast("❌ Task assignment failed!", icon="⚠️")
             else:
                 st.success("✅ All tasks are already assigned!")
         
@@ -842,18 +1320,32 @@ def show_recruiters_page():
             st.write("Type a task details to assign it directly")
             
             with st.form("create_assign_form"):
-                task_title = st.text_input("Task Title", placeholder="e.g., Review Frontend CVs")
-                selected_recruiters = st.multiselect(
-                    "Assign to Recruiters",
-                    options=recruiters,
-                    format_func=lambda x: x["name"],
-                    placeholder="Select one or more..."
-                )
-                
-                col_sub1, col_sub2 = st.columns(2)
-                with col_sub1:
+                col_row1_1, col_row1_2, col_row1_3 = st.columns([2, 2, 1])
+                with col_row1_1:
+                    task_title = st.text_input("Task Title", placeholder="e.g., Review Frontend CVs")
+                with col_row1_2:
+                    selected_recruiters = st.multiselect(
+                        "Assign to Recruiters",
+                        options=recruiters,
+                        format_func=lambda x: x["name"],
+                        placeholder="Select one or more..."
+                    )
+                with col_row1_3:
                     priority = st.selectbox("Priority", ["High", "Medium", "Low"], index=1)
-                with col_sub2:
+                
+                col_row2_1, col_row2_2 = st.columns([2, 1])
+                with col_row2_1:
+                    comment = st.text_area("Comment / Instructions", placeholder="Add specific details or steps for the recruiters...", height=100)
+                with col_row2_2:
+                    feedback_options = [
+                        "None",
+                        "Urgent Attention Required",
+                        "Waiting for Client",
+                        "Ongoing - Good Progress",
+                        "Needs More Candidates",
+                        "Hold - Project Paused"
+                    ]
+                    feedback = st.selectbox("Status Feedback", feedback_options)
                     location = st.text_input("Location", value="Remote")
                 
                 submit = st.form_submit_button("🚀 Create & Assign", use_container_width=True, type="primary")
@@ -871,16 +1363,20 @@ def show_recruiters_page():
                                 "title": task_title,
                                 "recruiter_ids": [r["id"] for r in selected_recruiters],
                                 "priority": priority,
-                                "location": location
+                                "location": location,
+                                "comment": comment,
+                                "feedback": feedback if feedback != "None" else ""
                             }
                         )
                         
                         if "success" in result and result["success"]:
                             st.success(f"✅ Task created and assigned to {len(selected_recruiters)} recruiters")
+                            st.toast("✅ Task created and assigned!", icon="🚀")
                             get_admin_dashboard_data.clear()
                             # st.rerun()
                         else:
                             st.error(f"❌ Error: {result.get('message', result.get('error'))}")
+                            st.toast("❌ Failed to create/assign task!", icon="⚠️")
 
 # ============================================================
 # ACTIVITY LOGS PAGE
@@ -1137,10 +1633,12 @@ def show_recruiter_login():
                     with st.spinner("Authenticating..."):
                         if login(username, password):
                             st.success("✅ Login successful!")
+                            st.toast(f"✅ Welcome back, {username}!", icon="🎯")
                             time.sleep(1)
                             st.rerun()
                         else:
                             st.error("❌ Invalid credentials")
+                            st.toast("❌ Login failed. Check credentials.", icon="⚠️")
                 else:
                     st.warning("⚠️ Enter username and password")
             
@@ -1162,10 +1660,12 @@ def show_recruiter_login():
                     with st.spinner("Registering..."):
                         if register(new_user, new_pass, new_email):
                             st.success("✅ Registered!")
+                            st.toast("✅ Account created successfully!", icon="📝")
                             time.sleep(1)
                             st.rerun()
                         else:
                             st.error("❌ Registration failed")
+                            st.toast("❌ Registration failed.", icon="⚠️")
 
 
 def show_recruiter_dashboard():
@@ -1264,6 +1764,12 @@ def show_recruiter_dashboard():
                         **{status_color} {task_dict.get('title', 'N/A')}**  
                         {priority_emoji} {priority} | {urgency_emoji} {urgency} | Created: {task_dict.get('created_at', 'N/A')[:10]}
                         """)
+                        
+                        if task_dict.get('feedback'):
+                            st.info(f"💬 **Admin Feedback:** {task_dict.get('feedback')}")
+                        if task_dict.get('comment'):
+                            with st.expander("📝 View Instructions/Comments"):
+                                st.write(task_dict.get('comment'))
                     
                     with col_actions:
                         task_id = task_dict.get('id', '')
@@ -1272,6 +1778,7 @@ def show_recruiter_dashboard():
                                 result = complete_task(task_id)
                                 if result.get("success"):
                                     st.success("✅ Task completed and removed from active tasks!")
+                                    st.toast("✅ Task completed!", icon="✅")
                                     time.sleep(1)
                                     st.rerun()
             else:
@@ -1483,6 +1990,7 @@ def show_recruiter_dashboard():
                                         if result.get("success"):
                                             # Display confirmation
                                             st.success(f"✅ Candidate {cand_name} Added Successfully to MongoDB!")
+                                            st.toast(f"✅ Candidate {cand_name} added!", icon="👥")
                                             
                                             # Show candidate summary
                                             st.subheader("👤 Candidate Summary")
@@ -1511,6 +2019,7 @@ def show_recruiter_dashboard():
                                             st.rerun()
                                         else:
                                             st.error(f"❌ Failed to add candidate: {result.get('error', 'Unknown error')}")
+                                            st.toast("❌ Failed to add candidate!", icon="⚠️")
                             
                             # Display all candidates for this task (from MongoDB)
                             st.divider()
@@ -1581,6 +2090,7 @@ def show_recruiter_dashboard():
                                             update_result = update_candidate_status(candidate.get('id'), new_status)
                                             if update_result.get("success"):
                                                 st.success(f"✅ Status updated to {reverse_status_map.get(new_status, new_status)}")
+                                                st.toast("✅ Status updated!", icon="🔄")
                                                 time.sleep(0.5)
                                                 st.rerun()
                                             else:
@@ -1591,10 +2101,12 @@ def show_recruiter_dashboard():
                                             delete_result = delete_candidate(candidate.get('id'))
                                             if delete_result.get("success"):
                                                 st.success("✅ Candidate deleted from database")
+                                                st.toast("✅ Candidate deleted!", icon="🗑️")
                                                 time.sleep(0.5)
                                                 st.rerun()
                                             else:
                                                 st.error("❌ Failed to delete candidate")
+                                                st.toast("❌ Failed to delete candidate!", icon="⚠️")
                             else:
                                 st.info("👇 No candidates added yet. Use the form above to add candidates to this task!")
                     
@@ -1609,6 +2121,7 @@ def show_recruiter_dashboard():
                                         result = complete_task(task_id)
                                         if result.get("success"):
                                             st.success("✅ Task completed!")
+                                            st.toast("✅ Task completed!", icon="✅")
                                             time.sleep(1)
                                             st.rerun()
                             
@@ -1617,6 +2130,7 @@ def show_recruiter_dashboard():
                                     result = delete_task(task_id)
                                     if result.get("success"):
                                         st.success("✅ Task deleted!")
+                                        st.toast("✅ Task deleted!", icon="🗑️")
                                         time.sleep(1)
                                         st.rerun()
                                     else:
@@ -1636,31 +2150,64 @@ def show_recruiter_dashboard():
         if "extract_triggered" not in st.session_state:
             st.session_state.extract_triggered = False
         
-        # MULTI-JD UPLOAD SECTION (Top)
-        st.markdown("### 📦 Upload Multiple JDs (Agent-Powered)")
-        st.info("🤖 **AI Agent Extraction:** Upload multiple JD files.")
+        # MERGED JD UPLOAD SECTION
+        st.info("🤖 **AI Agent Extraction:** Upload one or more JD files (PDF, TXT, DOCX).")
         
-        multi_files = st.file_uploader(
-            "Choose multiple JD files (PDF, TXT, DOCX)",
+        uploaded_files = st.file_uploader(
+            "Choose JD file(s)",
             type=["pdf", "txt", "docx"],
             accept_multiple_files=True,
-            key="multi_req_files"
+            key="req_files"
         )
         
-        if multi_files and st.button("🚀 Process Multiple JDs with Agent", use_container_width=True, key="multi_upload_btn"):
-            with st.spinner(f"🤖 Agent analyzing {len(multi_files)} JDs using NER extraction..."):
-                result = upload_multiple_jds(multi_files)
-                
-                if result.get("success"):
-                    st.success(f"✅ {result.get('message', 'JDs processed successfully!')}")
+        st.divider()
+        
+        # PASTE TEXT SECTION
+        st.markdown("### 📝 Paste Content")
+        text = st.text_area(
+            "Paste job description if not uploading files:",
+            height=200,
+            placeholder="Job Title: ...\nResponsibilities: ...\nRequired Skills: ...",
+            key="req_text"
+        )
+        
+        st.divider()
+        
+        # Unified Extract Button
+        if st.button("🔍 Extract & Create Task(s)", use_container_width=True, key="extract_btn"):
+            if text.strip() and uploaded_files:
+                st.warning("⚠️ Please use either paste OR upload, not both")
+            elif text.strip():
+                with st.spinner("Analyzing text..."):
+                    extraction_result = extract_requirement(text)
+                    source_type = "text"
+            elif uploaded_files:
+                if len(uploaded_files) > 1:
+                    with st.spinner(f"🤖 Agent analyzing {len(uploaded_files)} JDs using NER extraction..."):
+                        extraction_result = upload_multiple_jds(uploaded_files)
+                        source_type = "multi_file"
+                else:
+                    with st.spinner("Processing file..."):
+                        extraction_result = upload_file(uploaded_files[0])
+                        source_type = "file"
+            else:
+                st.warning("⚠️ Please paste text or upload file(s)")
+        
+        # Display Results
+        if extraction_result:
+            # Handle Multi-File Result
+            if source_type == "multi_file":
+                if extraction_result.get("success"):
+                    st.success(f"✅ {extraction_result.get('message', 'JDs processed successfully!')}")
+                    st.toast("✅ All JDs processed!", icon="📦")
                     st.info("📁 **Tasks have been saved to MongoDB** - They will persist even after logout!")
                     
                     st.subheader("📋 Extraction Results (Saved to Database)")
-                    for item in result.get("results", []):
+                    for item in extraction_result.get("results", []):
                         item_result = item.get("result", {})
                         if "error" not in item_result:
                             extracted = item_result.get('extracted_data', {})
-                            with st.expander(f"✅ {item.get('filename')} → {extracted.get('title', 'Task')}", expanded=True):
+                            with st.expander(f"✅ {item.get('filename')} → {extracted.get('title', 'Task')}", expanded=False):
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     st.write(f"**📌 Priority:** {extracted.get('priority', 'N/A')}")
@@ -1670,71 +2217,16 @@ def show_recruiter_dashboard():
                                     st.write(f"**📊 Complexity:** {extracted.get('complexity', 'N/A')}")
                                     st.write(f"**💼 Experience:** {extracted.get('experience', 'N/A')}")
                                     st.write(f"**🆔 Task ID:** `{item_result.get('task_id', 'N/A')}`")
-                                
-                                skills = extracted.get('skills', [])
-                                if skills:
-                                    st.write(f"**🛠️ Skills Extracted:** {', '.join(skills)}")
-                                
-                                if extracted.get('summary'):
-                                    st.write(f"**📝 Summary:** {extracted.get('summary', '')[:200]}...")
                         else:
                             st.error(f"❌ {item.get('filename')} → {item_result.get('error', 'Unknown error')}")
-                    
                     st.divider()
-                    st.success("🎉 **All tasks are now in MongoDB!** Go to **Dashboard** or **Tasks** tab to view and manage them.")
                 else:
-                    st.error(f"Error: {result.get('error', 'Unknown error')}")
-        
-        st.divider()
-        
-        # UPLOAD SINGLE FILE SECTION
-        st.markdown("### 📤 Upload Single File")
-        file = st.file_uploader(
-            "Choose file (PDF, TXT, DOCX)",
-            type=["pdf", "txt", "docx"],
-            key="req_file"
-        )
-        
-        st.divider()
-        
-        # PASTE TEXT SECTION
-        st.markdown("### 📝 Paste Content")
-        text = st.text_area(
-            "Paste job description:",
-            height=200,
-            placeholder="Job Title: ...\nResponsibilities: ...\nRequired Skills: ...",
-            key="req_text"
-        )
-        
-        st.divider()
-        
-        # Common Extract Button
-        if st.button("🔍 Extract & Create Task", use_container_width=True, key="extract_btn"):
-            st.session_state.extract_triggered = True
-        
-        # Process extraction if button was clicked
-        if st.session_state.extract_triggered:
-            if text.strip() and file:
-                st.warning("⚠️ Please use either paste OR upload, not both")
-            elif text.strip():
-                with st.spinner("Analyzing text..."):
-                    result = extract_requirement(text)
-                    source_type = "text"
-                    extraction_result = result
-            elif file:
-                with st.spinner("Processing file..."):
-                    result = upload_file(file)
-                    source_type = "file"
-                    extraction_result = result
-            else:
-                st.warning("⚠️ Please paste text or upload a file")
+                    st.error(f"Error: {extraction_result.get('error', 'Unknown error')}")
             
-            st.session_state.extract_triggered = False
-        
-        # Display Results
-        if extraction_result:
-            if "error" not in extraction_result:
+            # Handle Single File/Text Result
+            elif "error" not in extraction_result:
                 st.success("✅ Extracted & Task Created Successfully!")
+                st.toast("✅ Task extracted successfully!", icon="🔍")
                 
                 st.subheader("📊 Extracted Data")
                 data = extraction_result.get("extracted_data", {})
@@ -1769,6 +2261,7 @@ def show_recruiter_dashboard():
             else:
                 error_msg = extraction_result.get('error', 'Unknown error')
                 st.error(f"❌ Error: {error_msg}")
+                st.toast("❌ Extraction failed!", icon="❌")
                 
                 # Provide helpful suggestions
                 if "pdf" in error_msg.lower() or "Could not extract" in error_msg:
@@ -1879,11 +2372,13 @@ def show_recruiter_dashboard():
                         
                     if result.get("success"):
                         st.success(f"✅ {result.get('message')}")
+                        st.toast("✅ Interview invites sent!", icon="📅")
                         if result.get("sent_details"):
                             with st.expander("Email Details"):
                                 st.json(result.get("sent_details"))
                     else:
                         st.error(f"❌ Error: {result.get('error')}")
+                        st.toast("❌ Scheduling failed!", icon="⚠️")
                 else:
                     st.warning("⚠️ Please select all fields")
 
@@ -1898,15 +2393,18 @@ def show_recruiter_dashboard():
                 
             if result.get("email_sent"):
                 st.success(f"✅ EOD Report Sent to {result.get('recipient')}")
+                st.toast("✅ EOD email sent!", icon="📧")
                 with st.expander("📄 View Report", expanded=True):
                     st.text(result.get("summary"))
             else:
                 if "summary" in result:
                     st.warning("⚠️ Report generated but email failed")
+                    st.toast("⚠️ Report generated, email failed.", icon="⚠️")
                     with st.expander("📄 View Report", expanded=True):
                         st.text(result.get("summary"))
                 else:
                     st.error("❌ Failed to generate EOD summary")
+                    st.toast("❌ EOD report failed!", icon="⚠️")
         
         st.divider()
         
@@ -1938,7 +2436,7 @@ def show_recruiter_dashboard():
 def main():
     """Main app"""
     try:
-        health = requests.get(f"{API_BASE_URL}/health", timeout=10)
+        health = requests.get(f"{API_BASE_URL}/health", timeout=15)
         if health.status_code != 200:
             st.error("❌ Backend not responding")
             st.stop()
