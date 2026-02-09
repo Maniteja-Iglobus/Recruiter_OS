@@ -191,6 +191,16 @@ st.markdown("""
         border-radius: 3px;
         font-size: 0.85em;
     }
+    .time-picker-label {
+        text-align: center;
+        font-weight: bold;
+        color: #1f77b4;
+        margin-bottom: 20px;
+        font-size: 1.2em;
+    }
+    .done-btn-container {
+        margin-top: 20px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -245,7 +255,7 @@ def api_request(
                 # Longer timeout for file uploads
                 response = requests.post(url, headers=headers, files=files, timeout=60)
             else:
-                response = requests.post(url, headers=headers, json=data, timeout=30)
+                response = requests.post(url, headers=headers, json=data, timeout=180)
         elif method == "PUT":
             response = requests.put(url, headers=headers, json=data, timeout=30)
         elif method == "DELETE":
@@ -490,6 +500,8 @@ def get_eod_summary() -> Dict:
     """Get EOD summary"""
     return api_request("POST", "/api/eod-summary", {})
 
+
+
 def show_admin_dashboard():
     """Show admin dashboard"""
     # Safety check for session state
@@ -519,466 +531,12 @@ def show_admin_dashboard():
             st.session_state.admin_user = None
             st.session_state.page = "login"
             st.rerun()
-def show_recruiter_feedback_dashboard():
-    """Admin dashboard for viewing recruiter feedback and status"""
-    st.markdown("## 📋 Recruiter Feedback & Status Dashboard")
-    st.info("View feedback from recruiters on assigned tasks. Filter by task, recruiter, or status.")
-    
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Feedback Overview",
-        "📝 Submit/View Feedback",
-        "🔍 Filter & Search",
-        "📈 Analytics"
-    ])
-    
-    with tab1:
-        st.subheader("Feedback Summary")
-        
-        try:
-            summary = api_request("GET", "/api/admin/feedback/status-summary")
-            
-            if summary.get("success"):
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric("Total Feedbacks", summary.get("total_feedbacks", 0), delta="feedback entries")
-                
-                with col2:
-                    avg_rating = summary.get("average_rating", {}).get("avg_rating", 0)
-                    if avg_rating:
-                        st.metric("Avg Rating", f"{avg_rating:.1f}/5", delta="⭐ out of 5")
-                    else:
-                        st.metric("Avg Rating", "N/A", delta="no ratings yet")
-                
-                with col3:
-                    status_data = summary.get("status_summary", {})
-                    pending_count = status_data.get("pending", 0)
-                    st.metric("Pending Items", pending_count, delta="awaiting attention")
-                
-                st.divider()
-                
-                if status_data:
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        import plotly.graph_objects as go
-                        
-                        statuses = list(status_data.keys())
-                        counts = list(status_data.values())
-                        
-                        color_map = {
-                            "pending": "#FF9800",
-                            "in_progress": "#2196F3",
-                            "completed": "#4CAF50",
-                            "on_hold": "#9C27B0",
-                            "rejected": "#F44336"
-                        }
-                        colors = [color_map.get(status, "#757575") for status in statuses]
-                        
-                        fig = go.Figure(data=[
-                            go.Bar(
-                                x=statuses,
-                                y=counts,
-                                marker_color=colors,
-                                text=counts,
-                                textposition='auto',
-                            )
-                        ])
-                        fig.update_layout(
-                            title="Feedback by Status",
-                            xaxis_title="Status",
-                            yaxis_title="Count",
-                            height=400
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    with col2:
-                        st.subheader("Status Breakdown")
-                        for status, count in status_data.items():
-                            st.write(f"• **{status.upper()}**: {count}")
-        
-        except Exception as e:
-            st.error(f"Error fetching summary: {e}")
-        
-        st.divider()
-        st.subheader("All Feedback Entries")
-        
-        try:
-            dashboard = api_request("GET", "/api/admin/feedback/dashboard")
-            
-            if dashboard.get("success"):
-                feedbacks = dashboard.get("feedbacks", [])
-                
-                if feedbacks:
-                    df_data = []
-                    for fb in feedbacks:
-                        df_data.append({
-                            "Task": fb.get("task_name", "Unknown")[:30],
-                            "Recruiter": fb.get("recruiter_name", "Unknown"),
-                            "Status": fb.get("status", "pending").upper(),
-                            "Rating": "⭐" * fb.get("rating", 0) if fb.get("rating") else "N/A",
-                            "Feedback": fb.get("feedback", "")[:50] + "..." if len(fb.get("feedback", "")) > 50 else fb.get("feedback", ""),
-                            "Submitted": fb.get("submitted_at", "")[:10] if fb.get("submitted_at") else "N/A",
-                            "Entries": fb.get("feedback_count", 1)
-                        })
-                    
-                    df = pd.DataFrame(df_data)
-                    st.dataframe(df, use_container_width=True)
-                    
-                    st.subheader("Detailed View")
-                    
-                    for fb in feedbacks:
-                        with st.expander(f"📌 {fb['task_name']} - {fb['recruiter_name']}", expanded=False):
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                st.write(f"**Task ID:** {fb['task_id']}")
-                                st.write(f"**Recruiter ID:** {fb['recruiter_id']}")
-                            
-                            with col2:
-                                status_color = {
-                                    "pending": "🟠",
-                                    "in_progress": "🔵",
-                                    "completed": "🟢",
-                                    "on_hold": "🟣",
-                                    "rejected": "🔴"
-                                }
-                                status_emoji = status_color.get(fb['status'], "⚪")
-                                st.write(f"**Status:** {status_emoji} {fb['status'].upper()}")
-                                if fb.get('rating'):
-                                    st.write(f"**Rating:** {'⭐' * fb['rating']}")
-                            
-                            with col3:
-                                st.write(f"**Submitted:** {fb['submitted_at']}")
-                                st.write(f"**Total Entries:** {fb['feedback_count']}")
-                            
-                            st.write("---")
-                            st.write(f"**Feedback/Comments:**\n\n{fb['feedback']}")
-                else:
-                    st.info("No feedback entries found yet")
-        
-        except Exception as e:
-            st.error(f"Error fetching feedback: {e}")
-    
-    with tab2:
-        st.subheader("Feedback Management")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📝 Submit Feedback")
-            
-            try:
-                all_tasks = get_tasks() or []
-                task_options = {t['id']: t['title'] for t in all_tasks}
-                
-                if task_options:
-                    selected_task = st.selectbox(
-                        "Select Task",
-                        options=list(task_options.keys()),
-                        format_func=lambda x: task_options[x],
-                        key="fb_task_select"
-                    )
-                    
-                    task_data = next((t for t in all_tasks if t['id'] == selected_task), None)
-                    
-                    if task_data:
-                        assigned_recruiters = task_data.get('assigned_to', [])
-                        
-                        if assigned_recruiters:
-                            selected_recruiter = st.selectbox(
-                                "Recruiter Submitting Feedback",
-                                options=assigned_recruiters,
-                                key="fb_recruiter_select"
-                            )
-                            
-                            recruiter_data = api_request("GET", f"/api/admin/recruiter/{selected_recruiter}")
-                            recruiter_name = recruiter_data.get("recruiter", {}).get("name", "Unknown")
-                            
-                            st.write(f"**Recruiter:** {recruiter_name}")
-                            
-                            with st.form("submit_feedback_form"):
-                                status_options = ["pending", "in_progress", "completed", "on_hold", "rejected"]
-                                selected_status = st.selectbox(
-                                    "Current Status",
-                                    options=status_options,
-                                    key="fb_status"
-                                )
-                                
-                                feedback_text = st.text_area(
-                                    "Feedback/Comments",
-                                    height=150,
-                                    placeholder="Enter your feedback, comments, or observations...",
-                                    key="fb_text"
-                                )
-                                
-                                rating = st.slider(
-                                    "Rating (Optional)",
-                                    min_value=0,
-                                    max_value=5,
-                                    value=0,
-                                    help="0 = No rating, 5 = Excellent",
-                                    key="fb_rating"
-                                )
-                                
-                                if st.form_submit_button("✅ Submit Feedback"):
-                                    if feedback_text.strip():
-                                        payload = {
-                                            "task_id": selected_task,
-                                            "recruiter_id": selected_recruiter,
-                                            "status": selected_status,
-                                            "feedback": feedback_text,
-                                            "rating": rating if rating > 0 else None
-                                        }
-                                        
-                                        with st.spinner("Submitting feedback..."):
-                                            result = api_request("POST", "/api/admin/feedback/submit", payload)
-                                        
-                                        if result.get("success"):
-                                            st.success("✅ Feedback submitted successfully!")
-                                            st.balloons()
-                                            st.toast("Feedback saved!", icon="✅")
-                                        else:
-                                            st.error(f"❌ Error: {result.get('detail', 'Unknown error')}")
-                                    else:
-                                        st.warning("⚠️ Please enter feedback text")
-                        else:
-                            st.info("No recruiters assigned to this task")
-                else:
-                    st.info("No tasks available")
-            
-            except Exception as e:
-                st.error(f"Error: {e}")
-        
-        with col2:
-            st.markdown("### 🔍 View Feedback by Task")
-            
-            try:
-                all_tasks = get_tasks() or []
-                task_options = {t['id']: t['title'] for t in all_tasks}
-                
-                if task_options:
-                    selected_task = st.selectbox(
-                        "Select Task to View",
-                        options=list(task_options.keys()),
-                        format_func=lambda x: task_options[x],
-                        key="view_fb_task"
-                    )
-                    
-                    with st.spinner("Fetching feedback..."):
-                        task_fb = api_request("GET", f"/api/admin/feedback/by-task/{selected_task}")
-                    
-                    if task_fb.get("success"):
-                        feedbacks = task_fb.get("feedbacks", [])
-                        st.write(f"**Total Feedback Entries:** {task_fb.get('total_feedback_entries', 0)}")
-                        
-                        if feedbacks:
-                            for fb in feedbacks:
-                                with st.expander(
-                                    f"👤 {fb['recruiter_name']} - {fb['status'].upper()}",
-                                    expanded=False
-                                ):
-                                    col_a, col_b = st.columns(2)
-                                    
-                                    with col_a:
-                                        st.write(f"**Recruiter:** {fb['recruiter_name']}")
-                                        st.write(f"**Status:** {fb['status'].upper()}")
-                                    
-                                    with col_b:
-                                        if fb.get('rating'):
-                                            st.write(f"**Rating:** {'⭐' * fb['rating']}")
-                                        st.write(f"**Date:** {fb['submitted_at'][:10]}")
-                                    
-                                    st.write("---")
-                                    st.write(f"{fb['feedback']}")
-                        else:
-                            st.info("No feedback yet for this task")
-                else:
-                    st.info("No tasks available")
-            
-            except Exception as e:
-                st.error(f"Error: {e}")
-    
-    with tab3:
-        st.subheader("Advanced Filters")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            filter_task = st.text_input("Filter by Task ID (optional):", "")
-        
-        with col2:
-            filter_recruiter = st.text_input("Filter by Recruiter ID (optional):", "")
-        
-        with col3:
-            status_options = ["All", "pending", "in_progress", "completed", "on_hold", "rejected"]
-            filter_status = st.selectbox("Filter by Status:", status_options)
-        
-        if st.button("🔍 Apply Filters"):
-            params = {}
-            if filter_task.strip():
-                params["task_id"] = filter_task.strip()
-            if filter_recruiter.strip():
-                params["recruiter_id"] = filter_recruiter.strip()
-            if filter_status != "All":
-                params["status"] = filter_status
-            
-            with st.spinner("Filtering feedback..."):
-                result = api_request("GET", "/api/admin/feedback/filter", params=params)
-            
-            if result.get("success"):
-                feedbacks = result.get("feedbacks", [])
-                st.success(f"Found {len(feedbacks)} results")
-                
-                if feedbacks:
-                    for fb in feedbacks:
-                        with st.expander(
-                            f"📋 {fb['task_name']} | 👤 {fb['recruiter_name']} | {fb['status'].upper()}",
-                            expanded=False
-                        ):
-                            col_x, col_y, col_z = st.columns(3)
-                            
-                            with col_x:
-                                st.write(f"**Task ID:** {fb['task_id']}")
-                                st.write(f"**Task:** {fb['task_name']}")
-                            
-                            with col_y:
-                                st.write(f"**Recruiter:** {fb['recruiter_name']}")
-                                st.write(f"**Recruiter ID:** {fb['recruiter_id']}")
-                            
-                            with col_z:
-                                st.write(f"**Status:** {fb['status']}")
-                                if fb.get('rating'):
-                                    st.write(f"**Rating:** {'⭐' * fb['rating']}")
-                            
-                            st.write("---")
-                            st.write(f"**Feedback:**\n\n{fb['feedback']}")
-                            st.write(f"*Submitted: {fb['submitted_at']}*")
-            else:
-                st.error(f"Error: {result.get('detail', 'Unknown error')}")
-    
-    with tab4:
-        st.subheader("Feedback Analytics")
-        
-        try:
-            summary = api_request("GET", "/api/admin/feedback/status-summary")
-            dashboard = api_request("GET", "/api/admin/feedback/dashboard")
-            
-            if summary.get("success") and dashboard.get("success"):
-                feedbacks = dashboard.get("feedbacks", [])
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    status_data = summary.get("status_summary", {})
-                    if status_data:
-                        import plotly.graph_objects as go
-                        
-                        fig = go.Figure(data=[go.Pie(
-                            labels=list(status_data.keys()),
-                            values=list(status_data.values()),
-                            hole=0.3
-                        )])
-                        fig.update_layout(title="Status Distribution", height=400)
-                        st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
-                    ratings_data = {}
-                    for fb in feedbacks:
-                        rating = fb.get('rating')
-                        if rating:
-                            ratings_data[f"{rating}⭐"] = ratings_data.get(f"{rating}⭐", 0) + 1
-                    
-                    if ratings_data:
-                        fig = go.Figure(data=[go.Bar(
-                            x=list(ratings_data.keys()),
-                            y=list(ratings_data.values()),
-                            marker_color='indianred'
-                        )])
-                        fig.update_layout(title="Rating Distribution", xaxis_title="Rating", yaxis_title="Count", height=400)
-                        st.plotly_chart(fig, use_container_width=True)
-                
-                st.divider()
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Total Feedbacks", summary.get("total_feedbacks", 0))
-                
-                with col2:
-                    completed = summary.get("status_summary", {}).get("completed", 0)
-                    st.metric("Completed", completed)
-                
-                with col3:
-                    pending = summary.get("status_summary", {}).get("pending", 0)
-                    st.metric("Pending", pending)
-                
-                with col4:
-                    in_progress = summary.get("status_summary", {}).get("in_progress", 0)
-                    st.metric("In Progress", in_progress)
-                
-                st.divider()
-                st.subheader("Top Recruiters by Feedback Count")
-                
-                recruiter_counts = {}
-                for fb in feedbacks:
-                    recruiter = fb['recruiter_name']
-                    recruiter_counts[recruiter] = recruiter_counts.get(recruiter, 0) + fb.get('feedback_count', 1)
-                
-                if recruiter_counts:
-                    sorted_recruiters = sorted(recruiter_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-                    
-                    df_top = pd.DataFrame(sorted_recruiters, columns=["Recruiter", "Feedback Count"])
-                    
-                    fig = go.Figure(data=[go.Bar(
-                        x=df_top['Recruiter'],
-                        y=df_top['Feedback Count'],
-                        marker_color='lightblue'
-                    )])
-                    fig.update_layout(title="Top Recruiters by Feedback Count", xaxis_title="Recruiter", yaxis_title="Feedback Count", height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-        
-        except Exception as e:
-            st.error(f"Error loading analytics: {e}")
-
-
-def show_admin_dashboard():
-    """Show admin dashboard"""
-    # Safety check for session state
-    if not st.session_state.get("admin_user"):
-        st.error("⚠️ Session expired. Please login again.")
-        if st.button("Back to Login"):
-            logout()
-            st.rerun()
-        st.stop()
-
-    # Sidebar
-    with st.sidebar:
-        st.markdown(f"### 🔐 Admin: {st.session_state.admin_user.get('username', 'Admin')}")
-        st.markdown(f"📧 {st.session_state.admin_user.get('email', 'N/A')}")
-        st.divider()
-        
-        page = st.radio(
-            "Navigation",
-            ["📊 Dashboard", "👥 Recruiters", "📋 Feedback", "🕐 Activity Logs", "📈 Workload Report", "⚙️ Settings"],
-            key="admin_page"
-        )
-        
-        st.divider()
-        if st.button("🚪 Logout", use_container_width=True):
-            logout()
-            st.session_state.admin_token = None
-            st.session_state.admin_user = None
-            st.session_state.page = "login"
-            st.rerun()
         
     # Main content
     if page == "📊 Dashboard":
         show_dashboard_main()
     elif page == "👥 Recruiters":
         show_recruiters_page()
-    elif page == "📋 Feedback":
-        show_recruiter_feedback_dashboard()
     elif page == "🕐 Activity Logs":
         show_activity_logs()
     elif page == "📈 Workload Report":
@@ -1153,6 +711,23 @@ def show_recruiter_profile(recruiter_id: str):
                     st.write(f"**Status:** {task.get('status', 'pending')}")
                     st.write(f"**Priority:** {task.get('priority', 'Medium')}")
                     st.write(f"**ID:** {task.get('id', 'N/A')}")
+                    
+                    # Add candidate display section
+                    st.divider()
+                    st.subheader("👥 Candidates")
+                    candidates = get_task_candidates(task.get('id'))
+                    if candidates:
+                        cand_df = pd.DataFrame([
+                            {
+                                "Name": c.get("name"),
+                                "Status": c.get("status"),
+                                "Experience": f"{c.get('experience_years')} yrs",
+                                "Email": c.get("email")
+                            } for c in candidates
+                        ])
+                        st.dataframe(cand_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No candidates added for this task yet.")
     
     with tab_sessions:
         if not sessions:
@@ -1163,7 +738,7 @@ def show_recruiter_profile(recruiter_id: str):
                 session_data.append({
                     "Login": s.get("login_time", "N/A"),
                     "Logout": s.get("logout_time", "N/A"),
-                    "Duration (min)": s.get("duration_minutes", "N/A"),
+                    "Duration (min)": str(s.get("duration_minutes", "N/A")),
                     "Status": s.get("status", "N/A")
                 })
             st.table(session_data)
@@ -1337,15 +912,6 @@ def show_recruiters_page():
                 with col_row2_1:
                     comment = st.text_area("Comment / Instructions", placeholder="Add specific details or steps for the recruiters...", height=100)
                 with col_row2_2:
-                    feedback_options = [
-                        "None",
-                        "Urgent Attention Required",
-                        "Waiting for Client",
-                        "Ongoing - Good Progress",
-                        "Needs More Candidates",
-                        "Hold - Project Paused"
-                    ]
-                    feedback = st.selectbox("Status Feedback", feedback_options)
                     location = st.text_input("Location", value="Remote")
                 
                 submit = st.form_submit_button("🚀 Create & Assign", use_container_width=True, type="primary")
@@ -1364,8 +930,7 @@ def show_recruiters_page():
                                 "recruiter_ids": [r["id"] for r in selected_recruiters],
                                 "priority": priority,
                                 "location": location,
-                                "comment": comment,
-                                "feedback": feedback if feedback != "None" else ""
+                                "comment": comment
                             }
                         )
                         
@@ -1412,7 +977,7 @@ def show_activity_logs():
             "Recruiter": log.get("recruiter_name", "Unknown"),
             "Login Time": log.get("login_time", "")[:19],
             "Logout Time": log.get("logout_time", "Still logged in")[:19] if log.get("logout_time") != "Still logged in" else "Still logged in",
-            "Duration (min)": log.get("duration_minutes", "N/A"),
+            "Duration (min)": str(log.get("duration_minutes", "N/A")),
             "Status": log.get("status", "N/A")
         })
     
@@ -1577,6 +1142,26 @@ def show_settings():
     - **Authentication:** JWT Token-based
     - **Database:** MongoDB
     """)
+
+def parse_resume(file) -> Dict:
+    """Parse resume and extract candidate details"""
+    try:
+        file.seek(0)
+        files = {"file": file}
+        return api_request("POST", "/api/parse-resume", files=files)
+    except Exception as e:
+        return {"error": f"Resume parsing failed: {str(e)}"}
+
+
+def edit_candidate(candidate_id: str, update_data: Dict) -> Dict:
+    """Update candidate details"""
+    return api_request("PUT", f"/api/candidates/{candidate_id}/edit", data=update_data)
+
+
+def get_candidate_resume(candidate_id: str) -> Dict:
+    """Get candidate resume data"""
+    return api_request("GET", f"/api/candidates/{candidate_id}/resume")
+
 
 def add_candidate(task_id: str, candidate_data: Dict) -> Dict:
     """Add candidate to task"""
@@ -1765,8 +1350,6 @@ def show_recruiter_dashboard():
                         {priority_emoji} {priority} | {urgency_emoji} {urgency} | Created: {task_dict.get('created_at', 'N/A')[:10]}
                         """)
                         
-                        if task_dict.get('feedback'):
-                            st.info(f"💬 **Admin Feedback:** {task_dict.get('feedback')}")
                         if task_dict.get('comment'):
                             with st.expander("📝 View Instructions/Comments"):
                                 st.write(task_dict.get('comment'))
@@ -1888,138 +1471,167 @@ def show_recruiter_dashboard():
                             
                             task_id = task.get('id', '')
                             
-                            # Add candidate form (candidates are stored)
-                            with st.form(f"candidate_form_{task_id}", border=True):
-                                st.write("📝 **Candidate Details:**")
+                            # Tabbed interface for Add Candidate
+                            add_tab1, add_tab2 = st.tabs(["📄 Autofill with Resume", "✍️ Manual Fill"])
+                            
+                            # TAB 1: Autofill with Resume
+                            with add_tab1:
+                                st.info("🤖 Upload a resume and AI will extract candidate details automatically!")
                                 
-                                col_c1, col_c2 = st.columns(2)
-                                
-                                with col_c1:
-                                    cand_name = st.text_input(
-                                        "Candidate Name *",
-                                        placeholder="Full name",
-                                        key=f"cand_name_{task_id}"
-                                    )
-                                    cand_email = st.text_input(
-                                        "Email Address *",
-                                        placeholder="candidate@email.com",
-                                        key=f"cand_email_{task_id}"
-                                    )
-                                    cand_phone = st.text_input(
-                                        "Phone Number *",
-                                        placeholder="+91-1234567890",
-                                        key=f"cand_phone_{task_id}"
-                                    )
-                                
-                                with col_c2:
-                                    cand_exp = st.number_input(
-                                        "Years of Experience",
-                                        min_value=0,
-                                        max_value=60,
-                                        value=0,
-                                        key=f"cand_exp_{task_id}"
-                                    )
-                                    cand_company = st.text_input(
-                                        "Current Company",
-                                        placeholder="Company name",
-                                        key=f"cand_company_{task_id}"
-                                    )
-                                    cand_position = st.text_input(
-                                        "Current Position",
-                                        placeholder="Job title",
-                                        key=f"cand_position_{task_id}"
-                                    )
-                                
-                                cand_skills = st.multiselect(
-                                    "Candidate Skills",
-                                    options=skills if skills else ["Python", "JavaScript", "Java", "C++", "AWS", "Azure", "MongoDB", "PostgreSQL"],
-                                    key=f"cand_skills_{task_id}"
+                                resume_file = st.file_uploader(
+                                    "Upload Resume (PDF, DOCX, TXT)",
+                                    type=["pdf", "docx", "txt"],
+                                    key=f"resume_upload_{task_id}"
                                 )
                                 
-                                cand_notes = st.text_area(
-                                    "Additional Notes",
-                                    placeholder="Interview feedback, strengths, concerns, etc.",
-                                    height=80,
-                                    key=f"cand_notes_{task_id}"
-                                )
+                                # Initialize session state for parsed data
+                                parsed_key = f"parsed_resume_{task_id}"
+                                if parsed_key not in st.session_state:
+                                    st.session_state[parsed_key] = None
                                 
-                                cand_status = st.selectbox(
-                                    "Initial Status",
-                                    ["Applied", "Shortlisted", "Interview Scheduled", "Interviewed", "Offer Extended", "Rejected"],
-                                    index=0,
-                                    key=f"cand_status_{task_id}"
-                                )
-                                
-                                # Form submission
-                                col_submit_a, col_submit_b = st.columns(2)
-                                
-                                with col_submit_a:
-                                    submitted = st.form_submit_button(
-                                        "➕ Add Candidate",
-                                        use_container_width=True,
-                                        type="primary"
-                                    )
-                                
-                                with col_submit_b:
-                                    st.form_submit_button(
-                                        "🔄 Clear Form",
-                                        use_container_width=True
-                                    )
-                                
-                                if submitted:
-                                    # Validate required fields
-                                    if not cand_name or not cand_email or not cand_phone:
-                                        st.error("❌ Name, Email, and Phone are required!")
-                                    else:
-                                        # Create candidate data for API
-                                        candidate_data = {
-                                            "name": cand_name,
-                                            "email": cand_email,
-                                            "phone": cand_phone,
-                                            "experience_years": str(cand_exp),
-                                            "current_company": cand_company if cand_company else "N/A",
-                                            "current_position": cand_position if cand_position else "N/A",
-                                            "skills": cand_skills if cand_skills else [],
-                                            "notes": cand_notes if cand_notes else "",
-                                            "status": cand_status
-                                        }
+                                if resume_file:
+                                    if st.button("🔍 Parse Resume", key=f"parse_btn_{task_id}", use_container_width=True):
+                                        with st.spinner("🤖 Extracting candidate details from resume..."):
+                                            parse_result = parse_resume(resume_file)
                                         
-                                        # Save to MongoDB via API
-                                        result = add_candidate(task_id, candidate_data)
-                                        
-                                        if result.get("success"):
-                                            # Display confirmation
-                                            st.success(f"✅ Candidate {cand_name} Added Successfully to MongoDB!")
-                                            st.toast(f"✅ Candidate {cand_name} added!", icon="👥")
-                                            
-                                            # Show candidate summary
-                                            st.subheader("👤 Candidate Summary")
-                                            col_summary1, col_summary2 = st.columns(2)
-                                            
-                                            with col_summary1:
-                                                st.write(f"**Name:** {cand_name}")
-                                                st.write(f"**Email:** {cand_email}")
-                                                st.write(f"**Phone:** {cand_phone}")
-                                                st.write(f"**Experience:** {cand_exp} years")
-                                            
-                                            with col_summary2:
-                                                st.write(f"**Company:** {cand_company if cand_company else 'Not provided'}")
-                                                st.write(f"**Position:** {cand_position if cand_position else 'Not provided'}")
-                                                st.write(f"**Status:** {cand_status}")
-                                                st.write(f"**Task:** {task.get('title')}")
-                                            
-                                            if cand_skills:
-                                                st.write(f"**Skills:** {', '.join(cand_skills)}")
-                                            
-                                            if cand_notes:
-                                                st.write(f"**Notes:** {cand_notes}")
-                                            
-                                            st.info(f"✅ Candidate saved to database! ID: {result.get('candidate_id')}")
-                                            time.sleep(1)
-                                            st.rerun()
+                                        if "error" not in parse_result and parse_result.get("success"):
+                                            st.session_state[parsed_key] = parse_result
+                                            st.success("✅ Resume parsed successfully!")
+                                            st.toast("✅ Resume parsed!", icon="📄")
                                         else:
-                                            st.error(f"❌ Failed to add candidate: {result.get('error', 'Unknown error')}")
-                                            st.toast("❌ Failed to add candidate!", icon="⚠️")
+                                            st.error(f"❌ Failed to parse resume: {parse_result.get('error', 'Unknown error')}")
+                                
+                                # If resume is parsed, show editable form with extracted data
+                                if st.session_state.get(parsed_key):
+                                    parsed = st.session_state[parsed_key]
+                                    extracted = parsed.get("extracted_data", {})
+                                    
+                                    st.divider()
+                                    st.write("📝 **Review & Edit Extracted Details:**")
+                                    
+                                    with st.form(f"autofill_form_{task_id}", border=True):
+                                        col_af1, col_af2 = st.columns(2)
+                                        
+                                        with col_af1:
+                                            af_name = st.text_input("Name *", value=extracted.get("name", ""), key=f"af_name_{task_id}")
+                                            af_email = st.text_input("Email *", value=extracted.get("email", ""), key=f"af_email_{task_id}")
+                                            af_phone = st.text_input("Phone *", value=extracted.get("phone", ""), key=f"af_phone_{task_id}")
+                                        
+                                        with col_af2:
+                                            af_exp = st.number_input("Experience (Years)", min_value=0, max_value=60, 
+                                                                    value=int(extracted.get("experience_years", 0) or 0), key=f"af_exp_{task_id}")
+                                            af_company = st.text_input("Current Company", value=extracted.get("current_company", ""), key=f"af_company_{task_id}")
+                                            af_position = st.text_input("Current Position", value=extracted.get("current_position", ""), key=f"af_position_{task_id}")
+                                        
+                                        # Handle skills which might be list
+                                        extracted_skills = extracted.get("skills", [])
+                                        all_skills_options = list(set(extracted_skills + (skills if skills else [])))
+                                        af_skills = st.multiselect("Skills", options=all_skills_options if all_skills_options else ["Python"], 
+                                                                   default=extracted_skills if extracted_skills else [], key=f"af_skills_{task_id}")
+                                        
+                                        af_notes = st.text_area("Notes", value=extracted.get("notes", ""), height=80, key=f"af_notes_{task_id}")
+                                        af_status = st.selectbox("Initial Status", 
+                                                                ["Applied", "Shortlisted", "Interview Scheduled", "Interviewed", "Offer Extended", "Rejected"],
+                                                                index=0, key=f"af_status_{task_id}")
+                                        
+                                        af_submitted = st.form_submit_button("➕ Add Candidate with Resume", use_container_width=True, type="primary")
+                                        
+                                        if af_submitted:
+                                            if not af_name or not af_email or not af_phone:
+                                                st.error("❌ Name, Email, and Phone are required!")
+                                            else:
+                                                candidate_data = {
+                                                    "name": af_name,
+                                                    "email": af_email,
+                                                    "phone": af_phone,
+                                                    "experience_years": str(af_exp),
+                                                    "current_company": af_company if af_company else "N/A",
+                                                    "current_position": af_position if af_position else "N/A",
+                                                    "skills": af_skills if af_skills else [],
+                                                    "notes": af_notes if af_notes else "",
+                                                    "status": af_status,
+                                                    "resume_data": parsed.get("resume_data"),
+                                                    "resume_filename": parsed.get("resume_filename")
+                                                }
+                                                
+                                                result = add_candidate(task_id, candidate_data)
+                                                
+                                                if result.get("success"):
+                                                    st.success(f"✅ Candidate {af_name} added with resume!")
+                                                    st.toast(f"✅ Candidate {af_name} added!", icon="👥")
+                                                    st.session_state[parsed_key] = None
+                                                    time.sleep(1)
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"❌ Failed: {result.get('error', 'Unknown error')}")
+
+                            # TAB 2: Manual Fill
+                            with add_tab2:
+                                with st.form(f"candidate_form_{task_id}", border=True):
+                                    st.write("📝 **Candidate Details:**")
+                                    
+                                    col_c1, col_c2 = st.columns(2)
+                                    
+                                    with col_c1:
+                                        cand_name = st.text_input("Candidate Name *", placeholder="Full name", key=f"cand_name_{task_id}")
+                                        cand_email = st.text_input("Email Address *", placeholder="candidate@email.com", key=f"cand_email_{task_id}")
+                                        cand_phone = st.text_input("Phone Number *", placeholder="+91-1234567890", key=f"cand_phone_{task_id}")
+                                    
+                                    with col_c2:
+                                        cand_exp = st.number_input("Years of Experience", min_value=0, max_value=60, value=0, key=f"cand_exp_{task_id}")
+                                        cand_company = st.text_input("Current Company", placeholder="Company name", key=f"cand_company_{task_id}")
+                                        cand_position = st.text_input("Current Position", placeholder="Job title", key=f"cand_position_{task_id}")
+                                    
+                                    cand_skills = st.multiselect("Candidate Skills",
+                                        options=skills if skills else ["Python", "JavaScript", "Java", "C++", "AWS", "Azure"],
+                                        key=f"cand_skills_{task_id}")
+                                    
+                                    # Manual Resume Upload
+                                    cand_resume = st.file_uploader("Upload Resume (Optional)", type=["pdf", "docx", "txt"], key=f"manual_resume_{task_id}")
+                                    
+                                    cand_notes = st.text_area("Additional Notes", placeholder="Notes...", height=80, key=f"cand_notes_{task_id}")
+                                    cand_status = st.selectbox("Initial Status",
+                                        ["Applied", "Shortlisted", "Interview Scheduled", "Interviewed", "Offer Extended", "Rejected"],
+                                        index=0, key=f"cand_status_{task_id}")
+                                    
+                                    submitted = st.form_submit_button("➕ Add Candidate", use_container_width=True, type="primary")
+                                    
+                                    if submitted:
+                                        if not cand_name or not cand_email or not cand_phone:
+                                            st.error("❌ Name, Email, and Phone are required!")
+                                        else:
+                                            # Handle optional resume
+                                            resume_data_manual = None
+                                            resume_filename_manual = None
+                                            if cand_resume:
+                                                import base64
+                                                cand_resume.seek(0)
+                                                resume_data_manual = base64.b64encode(cand_resume.read()).decode('utf-8')
+                                                resume_filename_manual = cand_resume.name
+
+                                            candidate_data = {
+                                                "name": cand_name,
+                                                "email": cand_email,
+                                                "phone": cand_phone,
+                                                "experience_years": str(cand_exp),
+                                                "current_company": cand_company if cand_company else "N/A",
+                                                "current_position": cand_position if cand_position else "N/A",
+                                                "skills": cand_skills if cand_skills else [],
+                                                "notes": cand_notes if cand_notes else "",
+                                                "status": cand_status,
+                                                "resume_data": resume_data_manual,
+                                                "resume_filename": resume_filename_manual
+                                            }
+                                            
+                                            result = add_candidate(task_id, candidate_data)
+                                            
+                                            if result.get("success"):
+                                                st.success(f"✅ Candidate {cand_name} Added Successfully!")
+                                                st.toast(f"✅ Candidate {cand_name} added!", icon="👥")
+                                                time.sleep(1)
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ Failed to add candidate: {result.get('error', 'Unknown error')}")
                             
                             # Display all candidates for this task (from MongoDB)
                             st.divider()
@@ -2030,83 +1642,202 @@ def show_recruiter_dashboard():
                             if candidates_list:
                                 st.subheader(f"📋 Candidates List ({len(candidates_list)})")
                                 
-                                # Status mapping for backend compatibility
-                                status_map = {
-                                    "Applied": "applied",
-                                    "Shortlisted": "shortlisted",
-                                    "Interview Scheduled": "shortlisted",
-                                    "Interviewed": "shortlisted",
-                                    "Offer Extended": "hired",
-                                    "Rejected": "rejected"
-                                }
-                                
+                                # Status mapping
                                 reverse_status_map = {
                                     "applied": "Applied",
                                     "shortlisted": "Shortlisted",
                                     "rejected": "Rejected",
-                                    "hired": "Offer Extended"
+                                    "hired": "Offer Extended",
+                                    "interview scheduled": "Interview Scheduled",
+                                    "interviewed": "Interviewed"
                                 }
                                 
                                 for idx, candidate in enumerate(candidates_list):
                                     st.markdown("---")
-                                    display_status = reverse_status_map.get(candidate.get('status', 'applied'), candidate.get('status', 'Applied'))
-                                    st.markdown(f"### 👤 {candidate.get('name', 'N/A')} ({display_status})")
-
-                                    col_cd1, col_cd2 = st.columns(2)
-
-                                    with col_cd1:
-                                        st.write(f"**Email:** {candidate.get('email', 'N/A')}")
-                                        st.write(f"**Phone:** {candidate.get('phone', 'N/A')}")
-                                        st.write(f"**Experience:** {candidate.get('experience_years', 'N/A')} years")
-                                        st.write(f"**Added:** {candidate.get('applied_at', 'N/A')[:10] if candidate.get('applied_at') else 'N/A'}")
-
-                                    with col_cd2:
-                                        st.write(f"**Company:** {candidate.get('current_company', 'N/A')}")
-                                        st.write(f"**Position:** {candidate.get('current_position', 'N/A')}")
-                                        st.write(f"**Current Status:** {display_status}")
-
-                                    if candidate.get('skills'):
-                                        st.write(f"**Skills:** {', '.join(candidate.get('skills', []))}")
-
-                                    if candidate.get('notes'):
-                                        st.write(f"**Notes:** {candidate.get('notes', '')}")
-
-                                    col_act1, col_act2 = st.columns([2, 1])
-
-                                    with col_act1:
-                                        status_options = ["applied", "shortlisted", "rejected", "hired"]
-                                        current_status = candidate.get('status', 'applied')
-                                        current_idx = status_options.index(current_status) if current_status in status_options else 0
+                                    display_status = reverse_status_map.get(candidate.get('status', 'applied').lower(), candidate.get('status', 'Applied'))
+                                    
+                                    # Header with name and edit button
+                                    col_header, col_btns = st.columns([3, 1])
+                                    with col_header:
+                                        st.markdown(f"### 👤 {candidate.get('name', 'N/A')} ({display_status})")
+                                    
+                                    with col_btns:
+                                        edit_key = f"edit_mode_{candidate.get('id', idx)}"
+                                        if edit_key not in st.session_state:
+                                            st.session_state[edit_key] = False
                                         
-                                        new_status = st.selectbox(
-                                            "Change Status",
-                                            status_options,
-                                            index=current_idx,
-                                            key=f"status_{candidate.get('id', idx)}",
-                                            format_func=lambda x: reverse_status_map.get(x, x.title())
-                                        )
+                                        if st.button("✏️ Edit", key=f"edit_btn_{candidate.get('id', idx)}", use_container_width=True):
+                                            st.session_state[edit_key] = not st.session_state[edit_key]
+                                            st.rerun()
                                         
-                                        if new_status != current_status:
-                                            update_result = update_candidate_status(candidate.get('id'), new_status)
-                                            if update_result.get("success"):
-                                                st.success(f"✅ Status updated to {reverse_status_map.get(new_status, new_status)}")
-                                                st.toast("✅ Status updated!", icon="🔄")
-                                                time.sleep(0.5)
+                                        if candidate.get('resume_filename'):
+                                            view_key = f"view_resume_{candidate.get('id', idx)}"
+                                            is_viewing = st.session_state.get(view_key, False)
+                                            btn_label = "❌ Close Resume" if is_viewing else "📄 View Resume"
+                                            
+                                            if st.button(btn_label, key=f"view_res_btn_{candidate.get('id', idx)}", use_container_width=True):
+                                                st.session_state[view_key] = not is_viewing
                                                 st.rerun()
-                                            else:
-                                                st.error(f"❌ Failed to update status")
 
-                                    with col_act2:
-                                        if st.button("🗑️ Delete", key=f"delete_cand_{candidate.get('id', idx)}", use_container_width=True):
-                                            delete_result = delete_candidate(candidate.get('id'))
-                                            if delete_result.get("success"):
-                                                st.success("✅ Candidate deleted from database")
-                                                st.toast("✅ Candidate deleted!", icon="🗑️")
-                                                time.sleep(0.5)
+                                    # EDIT MODE
+                                    if st.session_state.get(edit_key, False):
+                                        with st.form(f"edit_form_{candidate.get('id', idx)}", border=True):
+                                            st.write("✏️ **Edit Candidate Details:**")
+                                            
+                                            col_e1, col_e2 = st.columns(2)
+                                            with col_e1:
+                                                edit_name = st.text_input("Name", value=candidate.get('name', ''), key=f"edit_name_{candidate.get('id', idx)}")
+                                                edit_email = st.text_input("Email", value=candidate.get('email', ''), key=f"edit_email_{candidate.get('id', idx)}")
+                                                edit_phone = st.text_input("Phone", value=candidate.get('phone', ''), key=f"edit_phone_{candidate.get('id', idx)}")
+                                            
+                                            with col_e2:
+                                                edit_exp = st.number_input("Experience", min_value=0, max_value=60, 
+                                                                           value=int(float(candidate.get('experience_years', 0) if candidate.get('experience_years') else 0)), 
+                                                                           key=f"edit_exp_{candidate.get('id', idx)}")
+                                                edit_company = st.text_input("Company", value=candidate.get('current_company', ''), key=f"edit_company_{candidate.get('id', idx)}")
+                                                edit_position = st.text_input("Position", value=candidate.get('current_position', ''), key=f"edit_position_{candidate.get('id', idx)}")
+                                            
+                                            edit_skills = st.multiselect("Skills", 
+                                                options=list(set(candidate.get('skills', []) + (skills if skills else []))),
+                                                default=candidate.get('skills', []),
+                                                key=f"edit_skills_{candidate.get('id', idx)}")
+                                            
+                                            edit_notes = st.text_area("Notes", value=candidate.get('notes', ''), key=f"edit_notes_{candidate.get('id', idx)}")
+                                            
+                                            edit_resume = st.file_uploader("Replace Resume (Optional)", type=["pdf", "docx", "txt"], key=f"edit_resume_{candidate.get('id', idx)}")
+                                            
+                                            col_save, col_cancel = st.columns(2)
+                                            with col_save:
+                                                save_btn = st.form_submit_button("💾 Save Changes", use_container_width=True, type="primary")
+                                            with col_cancel:
+                                                cancel_btn = st.form_submit_button("❌ Cancel", use_container_width=True)
+                                            
+                                            if save_btn:
+                                                update_data = {
+                                                    "name": edit_name,
+                                                    "email": edit_email,
+                                                    "phone": edit_phone,
+                                                    "experience_years": str(edit_exp),
+                                                    "current_company": edit_company,
+                                                    "current_position": edit_position,
+                                                    "skills": edit_skills,
+                                                    "notes": edit_notes,
+                                                }
+                                                
+                                                if edit_resume:
+                                                    import base64
+                                                    edit_resume.seek(0)
+                                                    update_data["resume_data"] = base64.b64encode(edit_resume.read()).decode('utf-8')
+                                                    update_data["resume_filename"] = edit_resume.name
+                                                
+                                                result = edit_candidate(candidate.get('id'), update_data)
+                                                if result.get("success"):
+                                                    st.success("✅ Candidate updated!")
+                                                    st.session_state[edit_key] = False
+                                                    time.sleep(0.5)
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"❌ Failed: {result.get('error', 'Unknown')}")
+                                            
+                                            if cancel_btn:
+                                                st.session_state[edit_key] = False
                                                 st.rerun()
+
+                                    # DISPLAY MODE
+                                    else:
+                                        col_cd1, col_cd2 = st.columns(2)
+
+                                        with col_cd1:
+                                            st.write(f"**Email:** {candidate.get('email', 'N/A')}")
+                                            st.write(f"**Phone:** {candidate.get('phone', 'N/A')}")
+                                            st.write(f"**Experience:** {candidate.get('experience_years', 'N/A')} years")
+                                            st.write(f"**Added:** {candidate.get('applied_at', 'N/A')[:10] if candidate.get('applied_at') else 'N/A'}")
+
+                                        with col_cd2:
+                                            st.write(f"**Company:** {candidate.get('current_company', 'N/A')}")
+                                            st.write(f"**Position:** {candidate.get('current_position', 'N/A')}")
+                                            st.write(f"**Current Status:** {display_status}")
+                                            if candidate.get('resume_filename'):
+                                                st.write(f"**Resume:** 📄 {candidate.get('resume_filename')}")
+
+                                        if candidate.get('skills'):
+                                            st.write(f"**Skills:** {', '.join(candidate.get('skills', []))}")
+
+                                        if candidate.get('notes'):
+                                            st.write(f"**Notes:** {candidate.get('notes', '')}")
+
+                                        col_act1, col_act2, col_act3 = st.columns([2, 1, 1])
+
+                                        with col_act1:
+                                            status_options = ["applied", "shortlisted", "rejected", "hired", "interview scheduled", "interviewed"]
+                                            current_status = candidate.get('status', 'applied').lower()
+                                            current_idx = status_options.index(current_status) if current_status in status_options else 0
+                                            
+                                            new_status = st.selectbox(
+                                                "Change Status",
+                                                status_options,
+                                                index=current_idx,
+                                                key=f"status_{candidate.get('id', idx)}",
+                                                format_func=lambda x: reverse_status_map.get(x, x.title())
+                                            )
+                                            
+                                            if new_status != current_status:
+                                                update_result = update_candidate_status(candidate.get('id'), new_status)
+                                                if update_result.get("success"):
+                                                    st.success(f"✅ Status updated!")
+                                                    time.sleep(0.5)
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"❌ Failed to update status")
+
+                                        with col_act2:
+                                            pass
+                                        
+                                        with col_act3:
+                                            if st.button("🗑️ Delete", key=f"delete_cand_{candidate.get('id', idx)}", use_container_width=True):
+                                                delete_result = delete_candidate(candidate.get('id'))
+                                                if delete_result.get("success"):
+                                                    st.success("✅ deleted")
+                                                    time.sleep(0.5)
+                                                    st.rerun()
+                                                else:
+                                                    st.error("❌ Failed")
+
+                                        # Resume Viewer Section (Full width)
+                                        view_key = f"view_resume_{candidate.get('id', idx)}"
+                                        if st.session_state.get(view_key):
+                                            st.markdown("---")
+                                            st.info(f"📄 Viewing Resume: {candidate.get('resume_filename')}")
+                                            
+                                            with st.spinner("Fetching resume..."):
+                                                resume_res = get_candidate_resume(candidate.get('id'))
+                                                
+                                            if resume_res.get("success"):
+                                                b64_data = resume_res.get("resume_data")
+                                                fname = resume_res.get("resume_filename", "").lower()
+                                                
+                                                # Display PDF
+                                                if fname.endswith(".pdf"):
+                                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64_data}" width="100%" height="800" type="application/pdf"></iframe>'
+                                                    st.markdown(pdf_display, unsafe_allow_html=True)
+                                                else:
+                                                    st.warning("⚠️ Preview only available for PDF files.")
+                                                
+                                                # Download Button
+                                                import base64
+                                                try:
+                                                    b_data = base64.b64decode(b64_data)
+                                                    st.download_button(
+                                                        label="⬇️ Download Resume",
+                                                        data=b_data,
+                                                        file_name=fname,
+                                                        mime="application/octet-stream",
+                                                        key=f"dl_res_{candidate.get('id', idx)}"
+                                                    )
+                                                except Exception as e:
+                                                    st.error(f"Error preparing download: {e}")
                                             else:
-                                                st.error("❌ Failed to delete candidate")
-                                                st.toast("❌ Failed to delete candidate!", icon="⚠️")
+                                                st.error("❌ Failed to fetch resume data")
                             else:
                                 st.info("👇 No candidates added yet. Use the form above to add candidates to this task!")
                     
@@ -2299,88 +2030,172 @@ def show_recruiter_dashboard():
         st.caption("✅ Synced with Google Calendar")
         st.info("Automate interview invites and scheduling based on available slots.")
         
-        # Form to schedule interviews
-        with st.form("schedule_form"):
-            # Fetch both pending and in_progress tasks
-            all_tasks = get_tasks() or []
-            tasks = [t for t in all_tasks if t.get('status') in ["pending", "in_progress"]]
-            task_options = {t['id']: t['title'] for t in tasks}
-            
-            selected_task_id = None
-            if task_options:
-                selected_task_id = st.selectbox(
-                    "Select Role",
-                    options=list(task_options.keys()),
-                    format_func=lambda x: f"{task_options[x]} ({next((t['status'] for t in tasks if t['id'] == x), 'Unknown')})"
-                )
-                if selected_task_id:
-                    # Fetch candidates for this task
-                    task_cand_list = get_task_candidates(selected_task_id)
-                    # Include 'applied' as well so they can schedule for any applicant
-                    shortlisted_cands = [c for c in task_cand_list if c.get('status') in ['applied', 'shortlisted', 'Interview Scheduled', 'Interviewed']]
-                    
-                    if shortlisted_cands:
-                        selected_candidate_ids = st.multiselect(
-                            "Select Candidates to Invite",
-                            options=[c['id'] for c in shortlisted_cands],
-                            format_func=lambda x: next((c['name'] for c in shortlisted_cands if c['id'] == x), "Unknown"),
-                            default=[c['id'] for c in shortlisted_cands] # Default select all
-                        )
-                        st.caption(f"Selecting {len(selected_candidate_ids)} candidates")
-                    else:
-                        st.warning("⚠️ No shortlisted candidates found for this role.")
-                        selected_candidate_ids = []
+        # Form to schedule interviews (Removed st.form to allow interactive buttons)
+        st.write("### 📅 Schedule New Interview")
+        
+        # Fetch both pending and in_progress tasks
+        all_tasks = get_tasks() or []
+        tasks = [t for t in all_tasks if t.get('status') in ["pending", "in_progress"]]
+        task_options = {t['id']: t['title'] for t in tasks}
+        
+        selected_task_id = None
+        if task_options:
+            selected_task_id = st.selectbox(
+                "Select Role",
+                options=list(task_options.keys()),
+                format_func=lambda x: f"{task_options[x]} ({next((t['status'] for t in tasks if t['id'] == x), 'Unknown')})"
+            )
+            if selected_task_id:
+                # Fetch candidates for this task
+                task_cand_list = get_task_candidates(selected_task_id)
+                # Include 'applied' as well so they can schedule for any applicant
+                shortlisted_cands = [c for c in task_cand_list if c.get('status') in ['applied', 'shortlisted', 'Interview Scheduled', 'Interviewed']]
+                
+                if shortlisted_cands:
+                    selected_candidate_ids = st.multiselect(
+                        "Select Candidates to Invite",
+                        options=[c['id'] for c in shortlisted_cands],
+                        format_func=lambda x: next((c['name'] for c in shortlisted_cands if c['id'] == x), "Unknown"),
+                        default=[c['id'] for c in shortlisted_cands] # Default select all
+                    )
+                    st.caption(f"Selecting {len(selected_candidate_ids)} candidates")
                 else:
+                    st.warning("⚠️ No shortlisted candidates found for this role.")
                     selected_candidate_ids = []
-
             else:
-                st.warning("No active tasks found for scheduling")
                 selected_candidate_ids = []
-            
-            schedule_date = st.date_input("Interview Date")
-            
-            # Get suggestions
-            if st.form_submit_button("🔍 Get Slot Suggestions"):
-                suggestions = api_request("GET", f"/api/suggest-slots?date={schedule_date}")
-                if "time_slots" in suggestions:
-                    st.session_state.suggested_slots = suggestions["time_slots"]
-                    st.success("✅ Slots analyzed based on your calendar")
-            
-            # Show slots if available
+
+        else:
+            st.warning("No active tasks found for scheduling")
+            selected_candidate_ids = []
+        
+        schedule_date = st.date_input("Interview Date")
+        
+        # Get suggestions
+        if st.button("🔍 Get Slot Suggestions", key="get_slots_btn"):
+            suggestions = api_request("GET", f"/api/suggest-slots?date={schedule_date}")
+            if "time_slots" in suggestions:
+                st.session_state.suggested_slots = suggestions["time_slots"]
+                st.success("✅ Slots analyzed based on your calendar")
+        
+        # Show slots if available
+        col_slots, col_custom = st.columns([3, 1])
+        with col_slots:
             interview_time = st.selectbox(
                 "Select Time Slot",
                 options=[s['slot'] for s in st.session_state.get('suggested_slots', [])],
                 placeholder="Choose a slot..."
             )
-            
-            location_type = st.selectbox("Location", ["Virtual", "In-Person"])
-            meeting_link = st.text_input("Meeting Link (e.g., Zoom/Meet)")
-            
-            if st.form_submit_button("✉️ Send Invites to Selected Candidates"):
-                if selected_task_id and schedule_date and interview_time and selected_candidate_ids:
-                    payload = {
-                        "task_id": selected_task_id,
-                        "candidate_ids": selected_candidate_ids,
-                        "date": str(schedule_date),
-                        "time": interview_time,
-                        "location": location_type,
-                        "meeting_link": meeting_link
-                    }
+        
+        with col_custom:
+            if st.button("⏰ Customize", help="Set a custom time"):
+                st.session_state.show_custom_time = not st.session_state.get("show_custom_time", False)
+        
+        if st.session_state.get("show_custom_time", False):
+            with st.container(border=True):
+                st.markdown("<div class='time-picker-label'>Select Time</div>", unsafe_allow_html=True)
+                
+                # Hour, Minute, AM/PM Columns
+                col_h, col_sep, col_m, col_p = st.columns([2, 0.5, 2, 2])
+                
+                # Initialize session state for the picker
+                if "custom_time_h" not in st.session_state: st.session_state.custom_time_h = 9
+                if "custom_time_m" not in st.session_state: st.session_state.custom_time_m = "00"
+                if "custom_time_p" not in st.session_state: st.session_state.custom_time_p = "am"
+                
+                with col_h:
+                    h_options = [i for i in range(1, 13)]
+                    try:
+                        h_idx = h_options.index(st.session_state.custom_time_h)
+                    except:
+                        h_idx = 8
+                    st.session_state.custom_time_h = st.selectbox("H", options=h_options, 
+                        index=h_idx, label_visibility="collapsed", key="picker_h")
+                
+                with col_sep:
+                    st.markdown("<h2 style='text-align: center; margin-top: 0;'>:</h2>", unsafe_allow_html=True)
+                
+                with col_m:
+                    m_options = [f"{i:02d}" for i in range(0, 60, 5)] # 5-min increments
+                    try:
+                        m_idx = m_options.index(st.session_state.custom_time_m)
+                    except:
+                        m_idx = 0
+                    st.session_state.custom_time_m = st.selectbox("M", options=m_options, 
+                        index=m_idx, label_visibility="collapsed", key="picker_m")
+                
+                with col_p:
+                    p_options = ["am", "pm"]
+                    try:
+                        p_idx = p_options.index(st.session_state.custom_time_p)
+                    except:
+                        p_idx = 0
+                    st.session_state.custom_time_p = st.selectbox("P", options=p_options, 
+                        index=p_idx, label_visibility="collapsed", key="picker_p")
+                
+                st.markdown("<div style='margin-top: 20px; font-weight: bold;'>Presets</div>", unsafe_allow_html=True)
+                col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+                
+                # Preset logic
+                def set_preset(h, m, p):
+                    st.session_state.custom_time_h = h
+                    st.session_state.custom_time_m = m
+                    st.session_state.custom_time_p = p
+                    st.rerun()
+
+                if col_p1.button("9 am", use_container_width=True, key="p_9am"): set_preset(9, "00", "am")
+                if col_p2.button("12 pm", use_container_width=True, key="p_12pm"): set_preset(12, "00", "pm")
+                if col_p3.button("4 pm", use_container_width=True, key="p_4pm"): set_preset(4, "00", "pm")
+                if col_p4.button("6 pm", use_container_width=True, key="p_6pm"): set_preset(6, "00", "pm")
+
+                st.markdown("<div class='done-btn-container'></div>", unsafe_allow_html=True)
+                if st.button("Done", use_container_width=True, type="primary", key="picker_done"):
+                    custom_time_str = f"{st.session_state.custom_time_h}:{st.session_state.custom_time_m} {st.session_state.custom_time_p}"
+                    # Calculate end time (assuming 1h duration)
+                    h_val = st.session_state.custom_time_h
+                    end_h = (h_val % 12) + 1
+                    end_p = st.session_state.custom_time_p
+                    if h_val == 11:
+                        end_p = "pm" if st.session_state.custom_time_p == "am" else "am"
                     
-                    with st.spinner("🤖 Scheduling Agent is sending emails..."):
-                        result = api_request("POST", "/api/schedule-interviews", payload)
-                        
-                    if result.get("success"):
-                        st.success(f"✅ {result.get('message')}")
-                        st.toast("✅ Interview invites sent!", icon="📅")
-                        if result.get("sent_details"):
-                            with st.expander("Email Details"):
-                                st.json(result.get("sent_details"))
-                    else:
-                        st.error(f"❌ Error: {result.get('error')}")
-                        st.toast("❌ Scheduling failed!", icon="⚠️")
+                    custom_end_str = f"{end_h}:{st.session_state.custom_time_m} {end_p}"
+                    new_slot = {"slot": f"{custom_time_str} - {custom_end_str} (Custom)"}
+                    
+                    if 'suggested_slots' not in st.session_state:
+                        st.session_state.suggested_slots = []
+                    st.session_state.suggested_slots.append(new_slot)
+                    st.session_state.show_custom_time = False
+                    st.success(f"✅ Custom slot {custom_time_str} added!")
+                    st.rerun()
+        
+        location_type = st.selectbox("Location", ["Virtual", "In-Person"])
+        meeting_link = st.text_input("Meeting Link (e.g., Zoom/Meet)")
+        
+        if st.button("✉️ Send Invites to Selected Candidates", key="send_invites_btn"):
+            if selected_task_id and schedule_date and interview_time and selected_candidate_ids:
+                payload = {
+                    "task_id": selected_task_id,
+                    "candidate_ids": selected_candidate_ids,
+                    "interview_date": str(schedule_date),
+                    "interview_time": interview_time,
+                    "location": location_type,
+                    "meeting_link": meeting_link
+                }
+                
+                with st.spinner("🤖 Scheduling Agent is sending emails..."):
+                    result = api_request("POST", "/api/schedule-interview", payload)
+                    
+                if result.get("success"):
+                    st.success(f"✅ {result.get('message')}")
+                    st.toast("✅ Interview invites sent!", icon="📅")
+                    if result.get("sent_details"):
+                        with st.expander("Email Details"):
+                            st.json(result.get("sent_details"))
                 else:
-                    st.warning("⚠️ Please select all fields")
+                    st.error(f"❌ Error: {result.get('error', 'Unknown Error')}")
+                    st.toast("❌ Scheduling failed!", icon="⚠️")
+            else:
+                st.warning("⚠️ Please select all fields (Task, Date, Time, Candidates)")
 
     # PAGE 5: Workload & EOD
     if selected_page == "📊 Workload & EOD":
