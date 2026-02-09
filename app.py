@@ -10,7 +10,13 @@ import smtplib
 import warnings
 from email.mime.text import MIMEText
 from datetime import datetime, timedelta
+import base64
 from typing import Dict, Any, List, Optional
+import json
+import hashlib
+import time
+from google import genai
+import pdfplumber
 
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,6 +76,16 @@ SMTP_USER = os.getenv("SMTP_USER", "your-email@gmail.com")
 SMTP_PASS = os.getenv("SMTP_PASS", "your-app-password")
 EOD_RECEIVER = os.getenv("EOD_RECEIVER", "your-email@gmail.com")
 
+# Gemini Config
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+if GEMINI_API_KEY:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+else:
+    print("⚠️ GEMINI_API_KEY not set in .env file!")
+    gemini_client = None
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -94,6 +110,101 @@ app.add_middleware(
 
 mongo_client = MongoClient(MONGODB_URL)
 db = mongo_client[MONGODB_DB]
+
+# ============================================================
+# LLM EXTRACTION HELPERS
+# ============================================================
+
+def call_gpt(prompt, max_retries=3):
+    """Call Gemini API with structured response requirement"""
+    if not gemini_client:
+        return None
+    
+    for attempt in range(max_retries):
+        try:
+            response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+            response_text = response.text.strip()
+            
+            # Remove markdown code blocks if present
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+                
+            return response_text
+        except Exception as e:
+            print(f"Gemini Attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)
+    return None
+
+def repair_json_string(json_str):
+    """Repair common JSON issues"""
+    if not json_str: return None
+    json_str = json_str.replace('\n', ' ').replace('\r', ' ')
+    json_str = re.sub(r'\s+', ' ', json_str)
+    # Remove markdown code blocks if present
+    if "```json" in json_str:
+        json_str = json_str.split("```json")[1].split("```")[0].strip()
+    elif "```" in json_str:
+        json_str = json_str.split("```")[1].split("```")[0].strip()
+    return json_str
+
+def try_parse_json(json_str):
+    """Try to parse JSON"""
+    if not json_str: return None
+    try:
+        return json.loads(json_str)
+    except:
+        repaired = repair_json_string(json_str)
+        try:
+            return json.loads(repaired)
+        except:
+            return None
+
+EXTRACTION_PROMPT_RESUME = """TASK: Extract EXACTLY this JSON from resume. Return ONLY the JSON object, no text before/after.
+
+RESUME:
+{content}
+
+REQUIRED JSON (return exactly this structure):
+{{
+  "name": "full name",
+  "email": "email address",
+  "phone": "phone number",
+  "current_position": "current or most recent job title",
+  "experience_years": (total years as INTEGER),
+  "current_company": "most recent company",
+  "skills": ["technical skill name 1", "technical skill name 2"],
+  "notes": "brief summary of candidate profile"
+}}
+
+RULES:
+1. experience_years = estimated total years from resume
+2. Return ONLY valid JSON, nothing else
+3. Use null for missing values"""
+
+EXTRACTION_PROMPT_JD = """TASK: Extract EXACTLY this JSON from Job Description. Return ONLY the JSON object, no text before/after.
+
+JOB DESCRIPTION:
+{content}
+
+REQUIRED JSON (return exactly this structure):
+{{
+  "title": "job title",
+  "priority": "High/Medium/Low",
+  "urgency": "Immediate/1 Week/Flexible",
+  "complexity": "Easy/Moderate/Complex",
+  "location": "location",
+  "experience": "required experience string",
+  "skills": ["technical skill name 1", "technical skill name 2"],
+  "summary": "brief summary of the role"
+}}
+
+RULES:
+1. Classify priority, urgency, and complexity based on JD tone and specific mentions
+2. Return ONLY valid JSON, nothing else
+3. Use null for missing values"""
 
 
 # ============================================================
@@ -356,79 +467,44 @@ class RequirementIntelligenceAgent:
             return []
 
     def analyze(self, text: str) -> Dict[str, Any]:
-        """Analyze requirement text and extract all fields"""
-        
-        # Priority
+        """Enhanced Requirement Extraction using OpenAI"""
         try:
-            priority_result = zero_shot(
-                text[:512],
-                candidate_labels=["High", "Medium", "Low"]
-            )
-            priority = priority_result["labels"][0]
-        except Exception:
-            priority = "Medium"
+            prompt = EXTRACTION_PROMPT_JD.format(content=text[:6000])
+            response_text = call_gpt(prompt)
+            extracted = try_parse_json(response_text)
+            
+            if not extracted:
+                # Fallback to local regex/simplified if LLM fails
+                return {
+                    "title": "Job Requirement",
+                    "priority": "Medium",
+                    "urgency": "Flexible",
+                    "complexity": "Moderate",
+                    "location": "Not Mentioned",
+                    "experience": "Not Mentioned",
+                    "skills": [],
+                    "summary": text[:200],
+                    "extracted_at": datetime.utcnow().isoformat()
+                }
 
-        # Urgency
-        try:
-            urgency_result = zero_shot(
-                text[:512],
-                candidate_labels=["Immediate", "1 Week", "Flexible"]
-            )
-            urgency = urgency_result["labels"][0]
-        except Exception:
-            urgency = "Flexible"
+            # Ensure technical fields are present
+            extracted["extracted_at"] = datetime.utcnow().isoformat()
+            
+            return extracted
 
-        # Complexity
-        try:
-            complexity_result = zero_shot(
-                text[:512],
-                candidate_labels=["Easy", "Moderate", "Complex"]
-            )
-            complexity = complexity_result["labels"][0]
-        except Exception:
-            complexity = "Moderate"
-
-        # Summary
-        try:
-            if len(text) > 100:
-                summary = summarizer(text[:1000], max_length=150, min_length=30)[0]["summary_text"]
-            else:
-                summary = text
-        except Exception:
-            summary = text[:200]
-
-        # Title
-        title = "Job Requirement"
-        title_match = re.search(r"(Role|Position|Job Title|Title)[:\-]?\s*([^\n]+)", text, re.I)
-        if title_match:
-            title = title_match.group(2).strip()[:100]
-
-        # Location
-        location = "Not Mentioned"
-        loc_match = re.search(r"(Location|City|State|Country)[:\-]?\s*([^\n]+)", text, re.I)
-        if loc_match:
-            location = loc_match.group(2).strip()[:100]
-
-        # Experience
-        experience = "Not Mentioned"
-        exp_match = re.search(r"(\d+\+?\s*years?)", text, re.I)
-        if exp_match:
-            experience = exp_match.group(1)
-
-        # Skills
-        skills = self.extract_skills(text)
-
-        return {
-            "title": title,
-            "priority": priority,
-            "urgency": urgency,
-            "complexity": complexity,
-            "location": location,
-            "experience": experience,
-            "skills": skills,
-            "summary": summary,
-            "extracted_at": datetime.utcnow().isoformat()
-        }
+        except Exception as e:
+            print(f"JD Extraction Error: {e}")
+            return {
+                "title": "Job Requirement",
+                "priority": "Medium",
+                "urgency": "Flexible",
+                "complexity": "Moderate",
+                "location": "Not Mentioned",
+                "experience": "Not Mentioned",
+                "skills": [],
+                "summary": text[:200],
+                "extracted_at": datetime.utcnow().isoformat()
+            }
 
 
 class TaskManager:
@@ -466,9 +542,39 @@ class TaskManager:
             "task_id": str(result.inserted_id)
         }
 
-    def get_all_tasks(self, user_id: str, status: Optional[str] = None) -> List[Dict]:
+    def create_task(self, user_id: str, title: str, priority: str = "Medium",
+                    urgency: str = "Normal", complexity: str = "Medium",
+                    location: str = "Remote", experience: str = "3-5 years",
+                    skills: List[str] = None, description: str = "") -> str:
+        """Create a new task from extracted requirement data.
+        
+        This method provides a cleaner interface for the API endpoints,
+        accepting keyword arguments and returning just the task_id string.
+        """
+        task_data = {
+            "title": title,
+            "priority": priority,
+            "urgency": urgency,
+            "complexity": complexity,
+            "location": location,
+            "experience": experience,
+            "skills": skills or [],
+            "description": description
+        }
+        result = self.add_task(user_id, task_data)
+        if result.get("success"):
+            return result.get("task_id")
+        # If task already exists, return the existing task_id 
+        if result.get("task_id"):
+            return result.get("task_id")
+        raise Exception(result.get("message", "Failed to create task"))
+
+    def get_all_tasks(self, user_id: str, status: Optional[str] = None, role: str = "recruiter") -> List[Dict]:
         """Get all tasks for user (created by or assigned to them)"""
-        query = {"$or": [{"user_id": user_id}, {"assigned_to": user_id}]}
+        if role == "admin":
+             query = {}
+        else:
+             query = {"$or": [{"user_id": user_id}, {"assigned_to": user_id}]}
         if status:
             query["status"] = status
         
@@ -637,31 +743,32 @@ class TaskAssignmentRequest(BaseModel):
     """Task assignment request"""
     task_id: str
     recruiter_ids: List[str] # Changed to multiple
-    def init_admin_collections():
-        """Initialize admin collections"""
-        try:
-            # Create login_logs collection with indexes
-            db.login_logs.create_index("recruiter_id")
-            db.login_logs.create_index("login_time")
-            db.login_logs.create_index([("login_time", -1)])
-        
-        # Create workload_snapshot collection
-            db.workload_snapshot.create_index("recruiter_id")
-            db.workload_snapshot.create_index("timestamp")
-        
-        # Create admin_users collection
-            db.admin_users.create_index("username", unique=True)
-        
-        # Create task_assignments collection
-            db.task_assignments.create_index("task_id")
-            db.task_assignments.create_index("recruiter_id")
-        
-            print("✅ Admin collections initialized")
-        except Exception as e:
-                print(f"⚠️ Admin collection warning: {e}")
+
+def init_admin_collections():
+    """Initialize admin collections"""
+    try:
+        # Create login_logs collection with indexes
+        db.login_logs.create_index("recruiter_id")
+        db.login_logs.create_index("login_time")
+        db.login_logs.create_index([("login_time", -1)])
+    
+    # Create workload_snapshot collection
+        db.workload_snapshot.create_index("recruiter_id")
+        db.workload_snapshot.create_index("timestamp")
+    
+    # Create admin_users collection
+        db.admin_users.create_index("username", unique=True)
+    
+    # Create task_assignments collection
+        db.task_assignments.create_index("task_id")
+        db.task_assignments.create_index("recruiter_id")
+    
+        print("✅ Admin collections initialized")
+    except Exception as e:
+            print(f"⚠️ Admin collection warning: {e}")
 
 # Initialize
-    init_admin_collections()
+init_admin_collections()
 
 class AdminAuthManager:
     """Manage admin user access"""
@@ -964,41 +1071,10 @@ class LoginTracker:
 # MASTER ORCHESTRATOR
 # ============================================================
 
-class RecruiterAgentOrchestrator:
-    def __init__(self):
-        self.req_agent = RequirementIntelligenceAgent()
-        self.task_manager = TaskManager()
-        self.daily_agent = DailyGuidanceAgent()
-
-
-agents = RecruiterAgentOrchestrator()
-
-
 # ============================================================
-# AUTO DAILY EOD SCHEDULER (7 PM)
+# AGENTS - WORKLOAD & SCHEDULING
 # ============================================================
 
-scheduler = BackgroundScheduler()
-
-def daily_eod_job():
-    """Scheduled EOD job - runs at 7 PM daily"""
-    try:
-        user = db.users.find_one()
-        if not user:
-            return
-        user_id = str(user["_id"])
-        user_email = user.get("email", EOD_RECEIVER)
-
-        summary = agents.daily_agent.generate_eod(user_id)
-        agents.daily_agent.send_email(summary, user_email)
-    except Exception as e:
-        print(f"Error in EOD job: {e}")
-
-
-scheduler.add_job(daily_eod_job, "cron", hour=19, minute=0)
-scheduler.start()
-
-print("✅ Daily EOD Scheduler Started (7 PM)")
 
 class WorkloadAgent:
     """
@@ -1272,12 +1348,21 @@ Best regards,
                         interview_date, interview_time, location, meeting_link
                     )
                     
-                    # Send actual email
+                    # Send actual email to Candidate
                     actual_sent = self.send_email(
                         email_content["subject"],
                         email_content["body"],
                         candidate.get("email")
                     )
+
+                    # Send copy to Recruiter
+                    recruiter_email = user.get("email")
+                    if recruiter_email:
+                        self.send_email(
+                            f"[Copy] {email_content['subject']}",
+                            email_content["body"],
+                            recruiter_email
+                        )
                     
                     # Store email record
                     email_record = {
@@ -1774,6 +1859,70 @@ Have a great evening! 🚀
         return report
 
 # ============================================================
+# MASTER ORCHESTRATOR & SCHEDULER
+# ============================================================
+
+class RecruiterAgentOrchestrator:
+    def __init__(self, database=None):
+        self.req_agent = RequirementIntelligenceAgent()
+        self.task_manager = TaskManager()
+        self.daily_agent = DailyGuidanceAgent()
+        # Use global db or provided database
+        target_db = database if database is not None else db
+        self.interview_email_agent = InterviewEmailAgent(target_db)
+
+
+agents = RecruiterAgentOrchestrator(db)
+master_agent = MasterAgent(db)
+
+
+# ============================================================
+# AUTO DAILY EOD SCHEDULER (7 PM)
+# ============================================================
+
+scheduler = BackgroundScheduler()
+
+def daily_eod_job():
+    """Scheduled EOD job - runs at 7 PM daily for all recruiters"""
+    try:
+        # Find all recruiters
+        recruiters = list(db.users.find({"role": "recruiter"}))
+        if not recruiters:
+            # Fallback for dev: find first few users if no 'recruiter' role exists
+            recruiters = list(db.users.find().limit(5))
+            
+        print(f"🚀 Running EOD Job for {len(recruiters)} recruiters")
+        
+        for user in recruiters:
+            user_id = str(user["_id"])
+            username = user.get("username", "Recruiter")
+            user_email = user.get("email")
+            
+            # Fallback to EOD_RECEIVER if email is missing or dummy
+            if not user_email or "@example.com" in user_email:
+                user_email = EOD_RECEIVER
+                
+            print(f"  - Generating comprehensive EOD for {username} ({user_email})")
+            
+            try:
+                # Use the comprehensive summary from MasterAgent
+                summary = master_agent.generate_comprehensive_eod(user_id)
+                # Send email using existing SMTP setup
+                email_sent = agents.daily_agent.send_email(summary, user_email)
+                print(f"    {'✅' if email_sent else '❌'} EOD Email Status for {username}: {email_sent}")
+            except Exception as inner_e:
+                print(f"    ❌ Error for {username}: {inner_e}")
+                
+    except Exception as e:
+        print(f"Error in EOD job: {e}")
+
+
+scheduler.add_job(daily_eod_job, "cron", hour=19, minute=0)
+scheduler.start()
+
+print("✅ Daily EOD Scheduler Started (7 PM)")
+
+# ============================================================
 # API SCHEMAS
 # ============================================================
 
@@ -1812,32 +1961,25 @@ class CandidateRequest(BaseModel):
     skills: List[str]
     notes: str = ""
     status: str = "applied" # Added status field
+    resume_data: Optional[str] = None
+    resume_filename: Optional[str] = None
 
-class RecruiterFeedback(BaseModel):
-    task_id: str
-    recruiter_id: str
-    status: str  # e.g., "pending", "in_progress", "completed", "on_hold", "rejected"
-    feedback: str  # Comments/notes from recruiter
-    rating: Optional[int] = None  # 1-5 rating (optional)
-    candidate_id: Optional[str] = None  # Link to specific candidate
+class CandidateUpdateRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    experience_years: str
+    current_company: str
+    current_position: str
+    skills: List[str]
+    notes: str = ""
+    resume_data: Optional[str] = None
+    resume_filename: Optional[str] = None
 
-class RecruiterComment(BaseModel):
-    task_id: str
-    recruiter_id: str
-    candidate_id: Optional[str] = None
-    comment: str  # Comment text from recruiter
-    type: str = "comment"  # "comment" or "observation"
+class AgentActionRequest(BaseModel):
+    action: str
+    payload: Dict
 
-class AdminReply(BaseModel):
-    feedback_id: str
-    reply: str  # Admin's reply to feedback
-
-
-class FeedbackUpdate(BaseModel):
-    feedback_id: str
-    status: str
-    feedback: str
-    rating: Optional[int] = None
 
 # ============================================================
 # ROUTES - AUTH
@@ -1969,7 +2111,7 @@ def get_tasks(
     status: str = None
 ):
     """Get tasks with optional status filter"""
-    tasks = agents.task_manager.get_all_tasks(current_user["id"], status)
+    tasks = agents.task_manager.get_all_tasks(current_user["id"], status, current_user.get("role", "recruiter"))
     return tasks
 
 
@@ -2013,52 +2155,264 @@ async def upload_requirement(
             print(f"Analysis error: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error analyzing file: {str(e)}. Try pasting text instead."
+                detail=f"Error analyzing requirement: {str(e)}"
             )
         
-        task_result = agents.task_manager.add_task(
-            current_user["id"],
-            analysis
+        # Create task in DB
+        task_id = agents.task_manager.create_task(
+            user_id=current_user["id"],
+            title=analysis.get("title", "Untitled Requirement"),
+            priority=analysis.get("priority", "Medium"),
+            urgency=analysis.get("urgency", "Normal"),
+            complexity=analysis.get("complexity", "Medium"),
+            location=analysis.get("location", "Remote"),
+            experience=analysis.get("experience", "3-5 years"),
+            skills=analysis.get("skills", []),
+            description=text # Store full text as description
         )
         
         return {
-            "success": task_result["success"],
-            "message": task_result["message"],
-            "task_id": task_result["task_id"],
-            "extracted_data": analysis,
-            "requirement_id": task_result["task_id"]
+            "success": True,
+            "message": "Requirement uploaded and task created successfully",
+            "task_id": task_id,
+            "extracted_data": analysis
         }
-    
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Upload error: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Upload failed: {str(e)}. Try pasting text content instead."
-        )
+        print(f"Error uploading requirement: {e}")
+        raise HTTPException(500, f"Error uploading requirement: {str(e)}")
 
 
 @app.post("/api/requirements/extract")
-def extract(req: RequirementRequest, current_user=Depends(get_current_user)):
-    """Extract from pasted text and create task"""
-    
-    analysis = agents.req_agent.analyze(req.content)
-    
-    task_result = agents.task_manager.add_task(
-        current_user["id"],
-        analysis
-    )
-    
-    return {
-        "success": task_result["success"],
-        "message": task_result["message"],
-        "task_id": task_result["task_id"],
-        "extracted_data": analysis,
-        "requirement_id": task_result["task_id"]
-    }
+def extract_requirement_from_text(
+    req: RequirementRequest,
+    current_user=Depends(get_current_user)
+):
+    """Extract requirement from pasted text and create task"""
+    try:
+        text = req.content
+        
+        if not text or text.strip() == "":
+            raise HTTPException(
+                status_code=400,
+                detail="No content provided. Please paste job description text."
+            )
+        
+        # Truncate text if too long (keep first 5000 chars for faster processing)
+        if len(text) > 5000:
+            text = text[:5000]
+        
+        # Analyze using requirement agent
+        try:
+            analysis = agents.req_agent.analyze(text)
+        except Exception as e:
+            print(f"Analysis error: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error analyzing requirement: {str(e)}"
+            )
+        
+        # Create task in DB
+        task_id = agents.task_manager.create_task(
+            user_id=current_user["id"],
+            title=analysis.get("title", "Untitled Requirement"),
+            priority=analysis.get("priority", "Medium"),
+            urgency=analysis.get("urgency", "Normal"),
+            complexity=analysis.get("complexity", "Medium"),
+            location=analysis.get("location", "Remote"),
+            experience=analysis.get("experience", "3-5 years"),
+            skills=analysis.get("skills", []),
+            description=text
+        )
+        
+        return {
+            "success": True,
+            "message": "Requirement extracted and task created successfully",
+            "task_id": task_id,
+            "extracted_data": analysis
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error extracting requirement: {e}")
+        raise HTTPException(500, f"Error extracting requirement: {str(e)}")
 
 
+# ============================================================
+# ROUTES - TASKS
+# ============================================================
+
+@app.post("/api/tasks")
+def create_task(
+    req: TaskCreateRequest,
+    current_user=Depends(get_current_user)
+):
+    """Create a new task"""
+    try:
+        task_id = agents.task_manager.create_task(
+            user_id=current_user["id"],
+            title=req.title,
+            priority=req.priority,
+            urgency=req.urgency,
+            complexity=req.complexity,
+            location=req.location,
+            experience=req.experience,
+            skills=req.skills
+        )
+        return {"success": True, "message": "Task created successfully", "task_id": task_id}
+    except Exception as e:
+        raise HTTPException(500, f"Error creating task: {str(e)}")
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task_details(task_id: str, current_user=Depends(get_current_user)):
+    """Get details for a specific task"""
+    task = agents.task_manager.get_task(task_id, current_user["id"])
+    if not task:
+        raise HTTPException(404, "Task not found or access denied")
+    return task
+
+
+@app.put("/api/tasks/{task_id}")
+def update_task(
+    task_id: str,
+    update_data: dict,
+    current_user=Depends(get_current_user)
+):
+    """Update a task"""
+    try:
+        success = agents.task_manager.update_task(task_id, current_user["id"], update_data)
+        if not success:
+            raise HTTPException(404, "Task not found or access denied")
+        return {"success": True, "message": "Task updated successfully"}
+    except Exception as e:
+        raise HTTPException(500, f"Error updating task: {str(e)}")
+
+
+@app.delete("/api/tasks/{task_id}")
+def delete_task(task_id: str, current_user=Depends(get_current_user)):
+    """Delete a task"""
+    try:
+        success = agents.task_manager.delete_task(task_id, current_user["id"])
+        if not success:
+            raise HTTPException(404, "Task not found or access denied")
+        return {"success": True, "message": "Task deleted successfully"}
+    except Exception as e:
+        raise HTTPException(500, f"Error deleting task: {str(e)}")
+
+
+@app.post("/api/tasks/{task_id}/assign")
+def assign_task(
+    task_id: str,
+    assignee_id: str,
+    current_user=Depends(get_current_user)
+):
+    """Assign a task to another user"""
+    try:
+        success = agents.task_manager.assign_task(task_id, current_user["id"], assignee_id)
+        if not success:
+            raise HTTPException(404, "Task not found or access denied")
+        return {"success": True, "message": f"Task {task_id} assigned to {assignee_id}"}
+    except Exception as e:
+        raise HTTPException(500, f"Error assigning task: {str(e)}")
+# ============================================================
+# ROUTES - INTERVIEW SCHEDULING
+# ============================================================
+
+@app.get("/api/suggest-slots")
+def suggest_slots(
+    date: str,
+    current_user=Depends(get_current_user)
+):
+    """Get suggested interview slots (Mock implementation)"""
+    try:
+        # Mock logic to generate slots based on date
+        # In a real app, this would check calendar tasks
+        
+        # Parse date to ensure it's valid
+        date_obj = datetime.strptime(date, "%Y-%m-%d")
+        day_name = date_obj.strftime("%A")
+        
+        if day_name in ["Saturday", "Sunday"]:
+             return {"time_slots": []} # No slots on weekends mock
+        
+        # Determine available slots (mock)
+        slots = [
+            {"slot": "09:00 - 10:00", "available": True},
+            {"slot": "10:00 - 11:00", "available": True},
+            {"slot": "11:00 - 12:00", "available": False}, # Occupied
+            {"slot": "13:00 - 14:00", "available": True},
+            {"slot": "14:00 - 15:00", "available": True},
+            {"slot": "15:00 - 16:00", "available": True},
+            {"slot": "16:00 - 17:00", "available": False}
+        ]
+        
+        # Filter only available
+        available_slots = [s for s in slots if s["available"]]
+        
+        return {
+            "success": True, 
+            "message": f"Found {len(available_slots)} slots for {date}",
+            "time_slots": available_slots
+        }
+    except ValueError:
+        raise HTTPException(400, "Invalid date format (YYYY-MM-DD)")
+    except Exception as e:
+        raise HTTPException(500, f"Error getting suggestions: {str(e)}")
+
+
+@app.post("/api/schedule-interview")
+def schedule_interview(
+    payload: dict,
+    current_user=Depends(get_current_user)
+):
+    """Schedule an interview for a candidate"""
+    try:
+        # Validate required fields
+        required_fields = ["candidate_ids", "task_id", "interview_date", "interview_time", "location"]
+        for field in required_fields:
+            if not payload.get(field):
+                raise HTTPException(400, f"Missing required field: {field}")
+
+        # Verify access to candidate and task
+        task = db.tasks.find_one({
+            "_id": ObjectId(payload["task_id"]),
+            "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
+        })
+        if not task:
+            raise HTTPException(403, "Access denied to this task")
+
+        # Use the agent to send emails and record the interview
+        result = agents.interview_email_agent.send_interview_emails(
+            task_id=payload["task_id"],
+            candidate_ids=payload["candidate_ids"],
+            user_id=current_user["id"],
+            interview_date=payload["interview_date"],
+            interview_time=payload["interview_time"],
+            location=payload.get("location", "Virtual"),
+            meeting_link=payload.get("meeting_link", "")
+        )
+
+        if not result.get("success"):
+            raise HTTPException(500, result.get("message", "Failed to schedule interview"))
+
+        return {"success": True, "message": "Interview scheduled and email sent successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error scheduling interview: {e}")
+        raise HTTPException(500, f"Error scheduling interview: {str(e)}")
+
+
+@app.get("/api/pending-interviews")
+def get_pending_interviews_route(current_user=Depends(get_current_user)):
+    """Get all pending interviews for the current user"""
+    try:
+        interviews = agents.interview_email_agent.get_pending_interviews(current_user["id"])
+        return interviews
+    except Exception as e:
+        raise HTTPException(500, f"Error retrieving pending interviews: {str(e)}")
 # ============================================================
 # ROUTES - TASK MANAGEMENT
 # ============================================================
@@ -2092,7 +2446,47 @@ def delete_task(
 
 
 # ============================================================
-# ROUTES - CANDIDATE MANAGEMENT
+# ROUTES - AGENT ACTIONS
+# ============================================================
+
+@app.post("/api/agent-action")
+def agent_action_route(
+    action_request: AgentActionRequest,
+    current_user=Depends(get_current_user)
+):
+    """Endpoint to trigger specific agent actions."""
+    try:
+        # Add user_id to payload for agent context
+        payload_with_user = action_request.payload.copy()
+        payload_with_user["user_id"] = current_user["id"]
+        
+        result = agents.handle_agent_action(action_request.action, payload_with_user)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error performing agent action '{action_request.action}': {e}")
+        raise HTTPException(500, f"Error performing agent action: {str(e)}")
+
+
+@app.get("/api/workload-report")
+def workload_report():
+    return master_agent.run("workload_check", {})
+
+
+@app.get("/api/recruiter/{recruiter_id}/risk")
+def recruiter_risk(recruiter_id: str):
+    return master_agent.run("burnout_alert", {"recruiter_id": recruiter_id})
+
+# ============================================================
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+# ============================================================
+# ROUTES - CANDIDATES & FEEDBACK
 # ============================================================
 
 @app.post("/api/tasks/{task_id}/candidates")
@@ -2104,15 +2498,18 @@ def add_candidate(
     """Add a candidate to a task"""
     try:
         # Verify task belongs to user OR is assigned to them
-        task = db.tasks.find_one({
-            "_id": ObjectId(task_id),
-            "$or": [
-                {"user_id": current_user["id"]},
-                {"assigned_to": current_user["id"]}
-            ]
-        })
+        if current_user.get("role") == "admin":
+            task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        else:
+            task = db.tasks.find_one({
+                "_id": ObjectId(task_id),
+                "$or": [
+                    {"user_id": current_user["id"]},
+                    {"assigned_to": current_user["id"]}
+                ]
+            })
         if not task:
-            raise HTTPException(404, "Task not found")
+            raise HTTPException(403, "Access denied to this task")
         
         # Create candidate document
         candidate_status = candidate.status.lower() if candidate.status else "applied"
@@ -2129,7 +2526,9 @@ def add_candidate(
             "skills": candidate.skills,
             "notes": candidate.notes,
             "status": candidate_status,
-            "applied_at": datetime.utcnow()
+            "applied_at": datetime.utcnow(),
+            "resume_data": candidate.resume_data,
+            "resume_filename": candidate.resume_filename
         }
         
         # Insert candidate
@@ -2163,13 +2562,16 @@ def get_task_candidates(
     """Get all candidates for a task"""
     try:
         # Verify task belongs to user OR is assigned to them
-        task = db.tasks.find_one({
-            "_id": ObjectId(task_id),
-            "$or": [
-                {"user_id": current_user["id"]},
-                {"assigned_to": current_user["id"]}
-            ]
-        })
+        if current_user.get("role") == "admin":
+            task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        else:
+            task = db.tasks.find_one({
+                "_id": ObjectId(task_id),
+                "$or": [
+                    {"user_id": current_user["id"]},
+                    {"assigned_to": current_user["id"]}
+                ]
+            })
         if not task:
             raise HTTPException(404, "Task not found")
         
@@ -2187,8 +2589,11 @@ def get_task_candidates(
                 "current_position": c.get("current_position"),
                 "skills": c.get("skills", []),
                 "notes": c.get("notes", ""),
+                "recruiter_feedback": c.get("recruiter_feedback", ""),
+                "manager_feedback": c.get("manager_feedback", ""),
                 "status": c.get("status"),
-                "applied_at": c.get("applied_at", "").isoformat() if c.get("applied_at") else ""
+                "applied_at": c.get("applied_at", "").isoformat() if c.get("applied_at") else "",
+                "resume_filename": c.get("resume_filename")
             }
             for c in candidates
         ]
@@ -2208,7 +2613,7 @@ def update_candidate_status(
 ):
     """Update candidate status (applied, shortlisted, rejected, hired)"""
     try:
-        # Try to get status from query parameter or body
+        # Try to get status from query parameter
         if not status:
             raise HTTPException(400, "Status parameter is required")
         
@@ -2222,17 +2627,20 @@ def update_candidate_status(
             raise HTTPException(404, "Candidate not found")
         
         task_id = candidate.get("task_id")
-        task = db.tasks.find_one({
-            "_id": ObjectId(task_id),
-            "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
-        })
+        if current_user.get("role") == "admin":
+             task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        else:
+             task = db.tasks.find_one({
+                 "_id": ObjectId(task_id),
+                 "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
+             })
         if not task:
             raise HTTPException(403, "Access denied to this candidate's task")
         
         # Update status
         result = db.candidates.update_one(
             {"_id": ObjectId(candidate_id)},
-            {"$set": {"status": status}}
+            {"$set": {"status": status, "updated_at": datetime.utcnow()}}
         )
         
         if result.modified_count > 0:
@@ -2267,10 +2675,13 @@ def delete_candidate(
             raise HTTPException(404, "Candidate not found")
         
         task_id = candidate.get("task_id")
-        task = db.tasks.find_one({
-            "_id": ObjectId(task_id),
-            "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
-        })
+        if current_user.get("role") == "admin":
+             task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        else:
+             task = db.tasks.find_one({
+                 "_id": ObjectId(task_id),
+                 "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
+             })
         if not task:
             raise HTTPException(403, "Access denied")
         
@@ -2289,620 +2700,342 @@ def delete_candidate(
         raise HTTPException(500, f"Error deleting candidate: {str(e)}")
 
 
-# ============================================================
-# ROUTES - EOD SUMMARY
-# ============================================================
-
-# ============================================================
-# ROUTES - INTERVIEWS & AGENTS
-# ============================================================
-
-class InterviewScheduleRequest(BaseModel):
-    task_id: str
-    candidate_ids: List[str] = [] # Optional: if empty, send to all shortlisted
-    date: str
-    time: str
-    location: str = "Virtual"
-    meeting_link: str = ""
-
-@app.post("/api/schedule-interviews")
-def schedule_interviews(
-    req: InterviewScheduleRequest,
+@app.post("/api/parse-resume")
+async def parse_resume(
+    file: UploadFile = File(...),
     current_user=Depends(get_current_user)
 ):
-    """Trigger Interview Email Agent to schedule and send invites"""
-    return master_agent.run("send_interview_emails", {
-        "task_id": req.task_id,
-        "candidate_ids": req.candidate_ids,
-        "user_id": current_user["id"],
-        "interview_date": req.date,
-        "interview_time": req.time,
-        "location": req.location,
-        "meeting_link": req.meeting_link
-    })
-
-@app.get("/api/suggest-slots")
-def suggest_slots(
-    date: str = None,
-    current_user=Depends(get_current_user)
-):
-    """Get interview slot suggestions from Scheduling Agent"""
-    return master_agent.run("suggest_slots", {
-        "user_id": current_user["id"],
-        "date": date
-    })
-
-@app.get("/api/pending-interviews")
-def pending_interviews(current_user=Depends(get_current_user)):
-    """Get pending interviews for the current user"""
-    return master_agent.run("get_pending_interviews", {
-        "user_id": current_user["id"]
-    })
-
-@app.post("/api/admin/feedback/submit")
-def submit_recruiter_feedback(
-    request: RecruiterFeedback,
-    current_user=Depends(get_current_user)
-):
-    """Recruiter submits feedback/status on a task"""
+    """Parse resume using OpenAI for accurate extraction"""
     try:
-        if current_user["id"] != request.recruiter_id and current_user["role"] != "admin":
-            raise HTTPException(status_code=403, detail="Cannot submit feedback for others")
+        # Read file
+        raw = await file.read()
         
-        feedback_doc = {
-            "task_id": ObjectId(request.task_id),
-            "recruiter_id": request.recruiter_id,
-            "recruiter_name": db.users.find_one({"_id": ObjectId(request.recruiter_id)}).get("username", "Unknown"),
-            "status": request.status,
-            "feedback": request.feedback,
-            "rating": request.rating,
-            "submitted_at": datetime.utcnow(),
+        if len(raw) > 5 * 1024 * 1024:
+            raise HTTPException(413, "Resume too large (max 5MB)")
+        
+        # Extract text from resume
+        text = extract_text_from_file(raw, file.filename)
+        
+        if not text or text.strip() == "":
+            raise HTTPException(400, f"Could not extract text from {file.filename}")
+        
+        # Call GPT for extraction
+        prompt = EXTRACTION_PROMPT_RESUME.format(content=text[:6000]) # Limit to 6000 chars
+        response_text = call_gpt(prompt)
+        
+        extracted = try_parse_json(response_text)
+        
+        if not extracted:
+            # Fallback to empty structure if LLM fails
+            extracted = {
+                "name": "", "email": "", "phone": "",
+                "experience_years": "0", "current_company": "",
+                "current_position": "", "skills": [], "notes": "Failed to extract data automically."
+            }
+        else:
+            # Ensure experience_years is a string for the frontend (as it uses number_input then converts)
+            # Actually the schema says string, but frontend does int(extracted.get("experience_years", 0))
+            # Let's keep it as int/string and let frontend handle it.
+            if "experience_years" in extracted:
+                extracted["experience_years"] = str(extracted["experience_years"])
+
+        # Encode resume as base64 for storage
+        resume_base64 = base64.b64encode(raw).decode('utf-8')
+        
+        return {
+            "success": True,
+            "extracted_data": extracted,
+            "resume_data": resume_base64,
+            "resume_filename": file.filename,
+            "message": "Resume parsed successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Resume parsing error: {e}")
+        raise HTTPException(500, f"Error parsing resume: {str(e)}")
+
+
+@app.put("/api/candidates/{candidate_id}/edit")
+def edit_candidate(
+    candidate_id: str,
+    update_data: CandidateUpdateRequest,
+    current_user=Depends(get_current_user)
+):
+    """Edit candidate details"""
+    try:
+        # Verify permissions
+        candidate = db.candidates.find_one({"_id": ObjectId(candidate_id)})
+        if not candidate:
+            raise HTTPException(404, "Candidate not found")
+            
+        task_id = candidate.get("task_id")
+        if current_user.get("role") == "admin":
+             task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        else:
+             task = db.tasks.find_one({
+                 "_id": ObjectId(task_id),
+                 "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
+             })
+        if not task:
+            raise HTTPException(403, "Access denied")
+            
+        # Prepare updates
+        updates = {
+            "name": update_data.name,
+            "email": update_data.email,
+            "phone": update_data.phone,
+            "experience_years": update_data.experience_years,
+            "current_company": update_data.current_company,
+            "current_position": update_data.current_position,
+            "skills": update_data.skills,
+            "notes": update_data.notes,
             "updated_at": datetime.utcnow()
         }
         
-        result = db.recruiter_feedback.insert_one(feedback_doc)
-        
-        db.tasks.update_one(
-            {"_id": ObjectId(request.task_id)},
-            {
-                "$set": {
-                    "last_feedback_status": request.status,
-                    "last_feedback_date": datetime.utcnow()
-                }
-            }
+        # Handle resume update if provided
+        if update_data.resume_data:
+            updates["resume_data"] = update_data.resume_data
+            updates["resume_filename"] = update_data.resume_filename
+            
+        result = db.candidates.update_one(
+            {"_id": ObjectId(candidate_id)},
+            {"$set": updates}
         )
         
-        return {
-            "success": True,
-            "message": "Feedback submitted successfully",
-            "feedback_id": str(result.inserted_id)
-        }
+        return {"success": True, "message": "Candidate updated successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 
-@app.get("/api/admin/feedback/dashboard")
-def get_feedback_dashboard(current_user=Depends(get_current_user)):
-    """Get all feedback for admin dashboard"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
+@app.get("/api/candidates/{candidate_id}/resume")
+def get_candidate_resume(
+    candidate_id: str,
+    current_user=Depends(get_current_user)
+):
+    """Get candidate resume"""
     try:
-        feedback_list = list(db.recruiter_feedback.aggregate([
-            {
-                "$sort": {"submitted_at": -1}
-            },
-            {
-                "$group": {
-                    "_id": {
-                        "task_id": "$task_id",
-                        "recruiter_id": "$recruiter_id"
-                    },
-                    "latest_feedback": {"$first": "$$ROOT"},
-                    "feedback_count": {"$sum": 1}
-                }
-            },
-            {
-                "$sort": {"latest_feedback.submitted_at": -1}
-            }
-        ]))
-        
-        result = []
-        for item in feedback_list:
-            task_id = item["_id"]["task_id"]
-            recruiter_id = item["_id"]["recruiter_id"]
-            feedback = item["latest_feedback"]
+        candidate = db.candidates.find_one({"_id": ObjectId(candidate_id)})
+        if not candidate:
+            raise HTTPException(404, "Candidate not found")
             
-            task = db.tasks.find_one({"_id": task_id})
-            recruiter = db.users.find_one({"_id": ObjectId(recruiter_id)})
-            related_comments = list(db.recruiter_comments.find(
-                {"task_id": task_id, "recruiter_id": recruiter_id}
-            ))
-            result.append({
-                "feedback_id": str(feedback["_id"]),
-                "task_id": str(task_id),
-                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
-                "recruiter_id": recruiter_id,
-                "recruiter_name": feedback.get("recruiter_name", "Unknown"),
-                "status": feedback.get("status", "pending"),
-                "feedback": feedback.get("feedback", ""),
-                "rating": feedback.get("rating"),
-                "submitted_at": safe_isoformat(feedback.get("submitted_at")),
-                "feedback_count": item.get("feedback_count" ,0),
-                "comments": [
-                    {
-                        "comment_id": str(c["_id"]),
-                        "comment": c.get("comment", ""),
-                        "type": c.get("type", "comment"),
-                        "submitted_at": safe_isoformat(c.get("submitted_at")),
-                        "admin_reply": c.get("admin_reply"),
-                        "status": c.get("status", "unread")
-                    }
-                    for c in related_comments
-                ],
-                "comment_count": len(related_comments)
-            })
-        
+        # Permission check
+        task_id = candidate.get("task_id")
+        if current_user.get("role") != "admin":
+             task = db.tasks.find_one({
+                 "_id": ObjectId(task_id),
+                 "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
+             })
+             if not task:
+                raise HTTPException(403, "Access denied")
+
+        if not candidate.get("resume_data"):
+             raise HTTPException(404, "No resume found for this candidate")
+             
         return {
-            "success": True,
-            "total_feedbacks": len(result),
-            "feedbacks": result
+            "success": True, 
+            "resume_data": candidate.get("resume_data"),
+            "resume_filename": candidate.get("resume_filename", "resume.pdf")
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 
-@app.get("/api/admin/feedback/by-task/{task_id}")
-def get_task_feedback(task_id: str, current_user=Depends(get_current_user)):
-    """Get all feedback for a specific task"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        feedback_list = list(db.recruiter_feedback.find(
-            {"task_id": ObjectId(task_id)},
-            sort=[("submitted_at", -1)]
-        ))
-        
-        task = db.tasks.find_one({"_id": ObjectId(task_id)})
-        
-        return {
-            "success": True,
-            "task_id": task_id,
-            "task_name": task.get("title", "Unknown") if task else "Unknown",
-            "total_feedback_entries": len(feedback_list),
-            "feedbacks": [
-                {
-                    "feedback_id": str(f["_id"]),
-                    "recruiter_id": f.get("recruiter_id"),
-                    "recruiter_name": f.get("recruiter_name"),
-                    "status": f.get("status"),
-                    "feedback": f.get("feedback"),
-                    "rating": f.get("rating"),
-                    "submitted_at": safe_isoformat(f.get("submitted_at"))
-                }
-                for f in feedback_list
-            ]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/feedback/by-recruiter/{recruiter_id}")
-def get_recruiter_feedbacks(recruiter_id: str, current_user=Depends(get_current_user)):
-    """Get all feedback submitted by a specific recruiter"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        feedback_list = list(db.recruiter_feedback.find(
-            {"recruiter_id": recruiter_id},
-            sort=[("submitted_at", -1)]
-        ))
-        
-        recruiter = db.users.find_one({"_id": ObjectId(recruiter_id)})
-        
-        enriched_feedback = []
-        for f in feedback_list:
-            task = db.tasks.find_one({"_id": f["task_id"]})
-            enriched_feedback.append({
-                "feedback_id": str(f["_id"]),
-                "task_id": str(f["task_id"]),
-                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
-                "status": f.get("status"),
-                "feedback": f.get("feedback"),
-                "rating": f.get("rating"),
-                "submitted_at": safe_isoformat(f.get("submitted_at"))
-            })
-        
-        return {
-            "success": True,
-            "recruiter_id": recruiter_id,
-            "recruiter_name": recruiter.get("username", "Unknown") if recruiter else "Unknown",
-            "total_feedbacks": len(enriched_feedback),
-            "feedbacks": enriched_feedback
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/recruiter/comment/submit")
-def submit_recruiter_comment(
-    request: RecruiterComment,
-    current_user=Depends(get_current_user)
-):
-    """Recruiter submits a comment on a task/candidate"""
-    try:
-        if current_user["id"] != request.recruiter_id and current_user["role"] != "admin":
-            raise HTTPException(status_code=403, detail="Cannot submit comment for others")
-        
-        recruiter = db.users.find_one({"_id": ObjectId(request.recruiter_id)})
-        
-        comment_doc = {
-            "task_id": ObjectId(request.task_id),
-            "recruiter_id": request.recruiter_id,
-            "recruiter_name": recruiter.get("username", "Unknown") if recruiter else "Unknown",
-            "candidate_id": ObjectId(request.candidate_id) if request.candidate_id else None,
-            "comment": request.comment,
-            "type": request.type,
-            "submitted_at": datetime.utcnow(),
-            "status": "unread",
-            "admin_reply": None,
-            "admin_replied_at": None
-        }
-        
-        result = db.recruiter_comments.insert_one(comment_doc)
-        
-        return {
-            "success": True,
-            "message": "Comment submitted successfully",
-            "comment_id": str(result.inserted_id)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/recruiter/comments/task/{task_id}")
-def get_task_comments(task_id: str, current_user=Depends(get_current_user)):
-    """Get all comments for a task"""
-    try:
-        comments_list = list(db.recruiter_comments.find(
-            {"task_id": ObjectId(task_id)},
-            sort=[("submitted_at", -1)]
-        ))
-        
-        return {
-            "success": True,
-            "task_id": task_id,
-            "total_comments": len(comments_list),
-            "comments": [
-                {
-                    "comment_id": str(c["_id"]),
-                    "recruiter_name": c.get("recruiter_name", "Unknown"),
-                    "recruiter_id": c.get("recruiter_id"),
-                    "comment": c.get("comment"),
-                    "type": c.get("type", "comment"),
-                    "submitted_at": safe_isoformat(c.get("submitted_at")),
-                    "admin_reply": c.get("admin_reply"),
-                    "admin_replied_at": safe_isoformat(c.get("admin_replied_at")) if c.get("admin_replied_at") else None,
-                    "status": c.get("status", "unread")
-                }
-                for c in comments_list
-            ]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/all-comments")
-def get_all_comments(current_user=Depends(get_current_user)):
-    """Get all comments for admin dashboard"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        comments_list = list(db.recruiter_comments.aggregate([
-            {
-                "$sort": {"submitted_at": -1}
-            },
-            {
-                "$group": {
-                    "_id": {
-                        "task_id": "$task_id",
-                        "recruiter_id": "$recruiter_id"
-                    },
-                    "latest_comment": {"$first": "$$ROOT"},
-                    "comment_count": {"$sum": 1}
-                }
-            },
-            {
-                "$sort": {"latest_comment.submitted_at": -1}
-            }
-        ]))
-        
-        result = []
-        for item in comments_list:
-            task_id = item["_id"]["task_id"]
-            recruiter_id = item["_id"]["recruiter_id"]
-            comment = item["latest_comment"]
-            
-            task = db.tasks.find_one({"_id": task_id})
-            
-            result.append({
-                "comment_id": str(comment["_id"]),
-                "task_id": str(task_id),
-                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
-                "recruiter_id": recruiter_id,
-                "recruiter_name": comment.get("recruiter_name", "Unknown"),
-                "comment": comment.get("comment", ""),
-                "type": comment.get("type", "comment"),
-                "submitted_at": safe_isoformat(comment.get("submitted_at")),
-                "admin_reply": comment.get("admin_reply"),
-                "admin_replied_at": safe_isoformat(comment.get("admin_replied_at")) if comment.get("admin_replied_at") else None,
-                "status": comment.get("status", "unread"),
-                "comment_count": item.get("comment_count", 0)
-            })
-        
-        return {
-            "success": True,
-            "total_comments": len(result),
-            "comments": result
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/admin/comment/reply/{comment_id}")
-def reply_to_comment(
-    comment_id: str,
-    request: AdminReply,
-    current_user=Depends(get_current_user)
-):
-    """Admin replies to a recruiter comment"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        result = db.recruiter_comments.update_one(
-            {"_id": ObjectId(comment_id)},
-            {
-                "$set": {
-                    "admin_reply": request.reply,
-                    "admin_replied_at": datetime.utcnow(),
-                    "status": "replied"
-                }
-            }
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Comment not found")
-        
-        return {
-            "success": True,
-            "message": "Reply added successfully"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/comments-summary")
-def get_comments_summary(current_user=Depends(get_current_user)):
-    """Get summary of comments"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        summary = list(db.recruiter_comments.aggregate([
-            {
-                "$group": {
-                    "_id": "$status",
-                    "count": {"$sum": 1}
-                }
-            }
-        ]))
-        
-        status_counts = {item["_id"]: item["count"] for item in summary}
-        
-        return {
-            "success": True,
-            "status_summary": status_counts,
-            "total_comments": sum(status_counts.values()),
-            "unread_count": status_counts.get("unread", 0)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/admin/feedback/status-summary")
-def get_feedback_status_summary(current_user=Depends(get_current_user)):
-    """Get summary of feedback statuses"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        summary = list(db.recruiter_feedback.aggregate([
-            {
-                "$group": {
-                    "_id": "$status",
-                    "count": {"$sum": 1}
-                }
-            },
-            {
-                "$sort": {"count": -1}
-            }
-        ]))
-        
-        status_counts = {item["_id"]: item["count"] for item in summary}
-        
-        return {
-            "success": True,
-            "status_summary": status_counts,
-            "total_feedbacks": sum(status_counts.values()),
-            "average_rating": db.recruiter_feedback.aggregate([
-                {
-                    "$match": {"rating": {"$exists": True, "$ne": None}}
-                },
-                {
-                    "$group": {
-                        "_id": None,
-                        "avg_rating": {"$avg": "$rating"}
-                    }
-                }
-            ]).next() if db.recruiter_feedback.count_documents({"rating": {"$exists": True, "$ne": None}}) > 0 else {"avg_rating": 0}
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.put("/api/admin/feedback/{feedback_id}")
-def update_feedback(
-    feedback_id: str,
-    request: FeedbackUpdate,
-    current_user=Depends(get_current_user)
-):
-    """Admin can update feedback status and notes"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        result = db.recruiter_feedback.update_one(
-            {"_id": ObjectId(feedback_id)},
-            {
-                "$set": {
-                    "status": request.status,
-                    "feedback": request.feedback,
-                    "rating": request.rating,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Feedback not found")
-        
-        return {
-            "success": True,
-            "message": "Feedback updated successfully"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/admin/feedback/{feedback_id}")
-def delete_feedback(
-    feedback_id: str,
-    current_user=Depends(get_current_user)
-):
-    """Admin can delete feedback entries"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        result = db.recruiter_feedback.delete_one({"_id": ObjectId(feedback_id)})
-        
-        if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Feedback not found")
-        
-        return {
-            "success": True,
-            "message": "Feedback deleted successfully"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/feedback/filter")
-def filter_feedback(
+@app.get("/api/comments")
+def get_comments(
     task_id: Optional[str] = None,
-    recruiter_id: Optional[str] = None,
-    status: Optional[str] = None,
+    candidate_id: Optional[str] = None,
     current_user=Depends(get_current_user)
 ):
-    """Filter feedback with multiple criteria"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
+    """Fetch comments for a task or candidate."""
     try:
         query = {}
+        if candidate_id:
+            query["candidate_id"] = candidate_id
+        elif task_id:
+            query["task_id"] = task_id
+            query["candidate_id"] = None # Only task-level comments
+        else:
+            raise HTTPException(400, "Missing task_id or candidate_id")
+
+        comments = list(db.comments.find(query).sort("created_at", 1))
         
-        if task_id:
-            query["task_id"] = ObjectId(task_id)
-        if recruiter_id:
-            query["recruiter_id"] = recruiter_id
-        if status:
-            query["status"] = status
+        for c in comments:
+            c["id"] = str(c["_id"])
+            del c["_id"]
+            if c.get("created_at"):
+                c["created_at"] = c["created_at"].isoformat()
         
-        feedback_list = list(db.recruiter_feedback.find(query).sort("submitted_at", -1))
+        return comments
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/comments")
+def add_comment(
+    req: Dict[str, Any],
+    current_user=Depends(get_current_user)
+):
+    """Add a comment/reply."""
+    try:
+        task_id = req.get("task_id")
+        candidate_id = req.get("candidate_id")
+        content = req.get("content")
         
-        enriched_feedback = []
-        for f in feedback_list:
-            task = db.tasks.find_one({"_id": f["task_id"]})
-            enriched_feedback.append({
-                "feedback_id": str(f["_id"]),
-                "task_id": str(f["task_id"]),
-                "task_name": task.get("title", "Unknown Task") if task else "Unknown Task",
-                "recruiter_id": f.get("recruiter_id"),
-                "recruiter_name": f.get("recruiter_name"),
-                "status": f.get("status"),
-                "feedback": f.get("feedback"),
-                "rating": f.get("rating"),
-                "submitted_at": safe_isoformat(f.get("submitted_at"))
-            })
+        if not content:
+            raise HTTPException(400, "Comment content cannot be empty")
+
+        new_comment = {
+            "task_id": task_id,
+            "candidate_id": candidate_id,
+            "user_id": current_user["id"],
+            "username": current_user["username"],
+            "role": current_user["role"],
+            "content": content,
+            "created_at": datetime.utcnow()
+        }
+        
+        result = db.comments.insert_one(new_comment)
+        
+        return {"success": True, "id": str(result.inserted_id)}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.put("/api/candidates/{candidate_id}/edit")
+def edit_candidate(
+    candidate_id: str,
+    update_data: CandidateUpdateRequest,
+    current_user=Depends(get_current_user)
+):
+    """Update candidate details (full edit)"""
+    try:
+        # Verify candidate exists
+        candidate = db.candidates.find_one({"_id": ObjectId(candidate_id)})
+        if not candidate:
+            raise HTTPException(404, "Candidate not found")
+        
+        # Verify access
+        task_id = candidate.get("task_id")
+        if current_user.get("role") == "admin":
+             task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        else:
+             task = db.tasks.find_one({
+                 "_id": ObjectId(task_id),
+                 "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
+             })
+        if not task:
+            raise HTTPException(403, "Access denied to this candidate's task")
+        
+        # Build update dict
+        update_dict = update_data.dict(exclude_unset=True)
+        update_dict["updated_at"] = datetime.utcnow()
+        
+        # Update candidate
+        result = db.candidates.update_one(
+            {"_id": ObjectId(candidate_id)},
+            {"$set": update_dict}
+        )
+        
+        return {"success": True, "message": "Candidate updated successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating candidate: {e}")
+        raise HTTPException(500, f"Error updating candidate: {str(e)}")
+
+
+@app.get("/api/candidates/{candidate_id}/resume")
+def download_candidate_resume(
+    candidate_id: str,
+    current_user=Depends(get_current_user)
+):
+    """Get candidate resume data for download"""
+    try:
+        candidate = db.candidates.find_one({"_id": ObjectId(candidate_id)})
+        if not candidate:
+            raise HTTPException(404, "Candidate not found")
+        
+        # Verify access
+        task_id = candidate.get("task_id")
+        if current_user.get("role") == "admin":
+             task = db.tasks.find_one({"_id": ObjectId(task_id)})
+        else:
+             task = db.tasks.find_one({
+                 "_id": ObjectId(task_id),
+                 "$or": [{"user_id": current_user["id"]}, {"assigned_to": current_user["id"]}]
+             })
+        if not task:
+            raise HTTPException(403, "Access denied")
+        
+        resume_data = candidate.get("resume_data")
+        if not resume_data:
+            raise HTTPException(404, "No resume found for this candidate")
         
         return {
             "success": True,
-            "filters_applied": query,
-            "total_results": len(enriched_feedback),
-            "feedbacks": enriched_feedback
+            "resume_data": resume_data,
+            "resume_filename": candidate.get("resume_filename", "resume.pdf")
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, f"Error getting resume: {str(e)}")
 # ============================================================
-# ROUTES - EOD SUMMARY
+# ROUTES - EOD SUMMARY & TRIGGERS
 # ============================================================
 
 @app.post("/api/eod-summary")
 def manual_eod(current_user=Depends(get_current_user)):
-    """Manually trigger comprehensive EOD summary"""
+    """Manually trigger comprehensive EOD summary for the current recruiter"""
     try:
-        # Generate EOD using DailyGuidanceAgent (Simple & Robust)
-        summary = agents.daily_agent.generate_eod(current_user["id"])
+        # Generate EOD using MasterAgent logic
+        summary = master_agent.generate_comprehensive_eod(current_user["id"])
         
         user = db.users.find_one({"_id": ObjectId(current_user["id"])})
-        
-        # Get user email - prioritize the one in their profile
         user_email = user.get("email") if user else None
         
-        # Fallback to EOD_RECEIVER only if user has no email or it's a dummy one
         if not user_email or "@example.com" in user_email:
              user_email = EOD_RECEIVER
         
-        # Send email to their respective mail
         email_sent = agents.daily_agent.send_email(summary, user_email)
         
         return {
+            "success": True,
             "summary": summary,
             "email_sent": email_sent,
             "recipient": user_email if email_sent else None
         }
     except Exception as e:
-        print(f"EOD Error: {e}")
+        print(f"❌ EOD Manual Error: {e}")
         return {
+            "success": False,
             "error": f"Failed to generate EOD: {str(e)}",
             "email_sent": False
         }
 
-master_agent = MasterAgent(db)
+@app.post("/api/admin/trigger-eod")
+def trigger_eod_all(current_user=Depends(get_current_user)):
+    """Admin triggers EOD summary for all recruiters immediately"""
+    if not AdminAuthManager.is_admin(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Run in background to avoid blocking
+    import threading
+    thread = threading.Thread(target=daily_eod_job)
+    thread.start()
+    
+    return {"success": True, "message": "EOD job triggered for all recruiters in background"}
 
-@app.get("/api/workload-report")
-def workload_report():
-    return master_agent.run("workload_check", {})
-
-
-@app.get("/api/recruiter/{recruiter_id}/risk")
-def recruiter_risk(recruiter_id: str):
-    return master_agent.run("burnout_alert", {"recruiter_id": recruiter_id})
-
+# ============================================================
+# ROUTES - ADMIN
+# ============================================================
 
 @app.post("/api/admin/login")
 def admin_login(request: AdminLoginRequest):
@@ -2924,7 +3057,6 @@ def admin_login(request: AdminLoginRequest):
         "admin": admin,
         "is_admin": True
     }
-
 
 @app.get("/api/admin/dashboard")
 def admin_dashboard(current_user=Depends(get_current_user)):
@@ -2981,51 +3113,71 @@ def admin_dashboard(current_user=Depends(get_current_user)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Dashboard error: {str(e)}")
 
+@app.get("/api/admin/recruiters")
+def get_all_recruiters(current_user=Depends(get_current_user)):
+    """Get list of recruiters"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    return TaskAssignmentManager.get_all_recruiters()
 
 @app.get("/api/admin/recruiter/{recruiter_id}")
 def get_recruiter_details(recruiter_id: str, current_user=Depends(get_current_user)):
-    """Get detailed recruiter information"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
+    """Get detailed stats for a recruiter"""
+    if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    try:
-        recruiter = db.users.find_one(
-            {"_id": ObjectId(recruiter_id)},
-            projection={"_id": 1, "username": 1, "email": 1}
-        )
-        
-        if not recruiter:
-            raise HTTPException(status_code=404, detail="Recruiter not found")
-        
-        workload = WorkloadMonitor.calculate_recruiter_workload(recruiter_id)
-        
-        # Get sessions
-        sessions = list(db.login_logs.find(
-            {"recruiter_id": recruiter_id},
-            projection={"_id": 1, "login_time": 1, "logout_time": 1, "duration_minutes": 1, "status": 1}
-        ).sort("login_time", -1).limit(50))
-        
-        return {
-            "recruiter": {
-                "id": str(recruiter["_id"]),
-                "name": recruiter.get("username", "Unknown"),
-                "email": recruiter.get("email", "N/A")
-            },
-            "workload": workload,
-            "recent_sessions": [
-                {
-                    "id": str(s["_id"]),
-                    "login_time": safe_isoformat(s.get("login_time")),
-                    "logout_time": safe_isoformat(s.get("logout_time")) or "Still logged in",
-                    "duration_minutes": s.get("duration_minutes", "N/A"),
-                    "status": s.get("status", "unknown")
-                }
-                for s in sessions
-            ]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    recruiter = db.users.find_one({"_id": ObjectId(recruiter_id)})
+    if not recruiter:
+        raise HTTPException(404, "Recruiter not found")
+    
+    # Workload
+    r_id = str(recruiter["_id"])
+    tasks = list(db.tasks.find({"$or": [{"assigned_to": r_id}, {"user_id": r_id}]}))
+    
+    active_tasks = [t for t in tasks if t.get("status") in ["pending", "in_progress"]]
+    workload_pct = min(len(active_tasks) * 20, 100)
+    
+    task_list = []
+    for t in tasks:
+        task_list.append({
+            "id": str(t["_id"]),
+            "title": t.get("title"),
+            "status": t.get("status"),
+            "priority": t.get("priority"),
+            "created_at": t.get("created_at", "").isoformat() if t.get("created_at") else ""
+        })
+    
+    # Get sessions
+    sessions = list(db.login_logs.find(
+        {"recruiter_id": recruiter_id},
+        projection={"_id": 1, "login_time": 1, "logout_time": 1, "duration_minutes": 1, "status": 1}
+    ).sort("login_time", -1).limit(50))
+    
+    return {
+        "recruiter": {
+            "id": r_id,
+            "name": recruiter.get("username"),
+            "email": recruiter.get("email"),
+            "role": recruiter.get("role")
+        },
+        "workload": {
+            "tasks": task_list,
+            "workload_percentage": workload_pct,
+            "current_status": recruiter.get("status", "offline"),
+            "last_active": recruiter.get("last_active", "").isoformat() if recruiter.get("last_active") else "N/A"
+        },
+        "recent_sessions": [
+            {
+                "id": str(s["_id"]),
+                "login_time": safe_isoformat(s.get("login_time")),
+                "logout_time": safe_isoformat(s.get("logout_time")) or "Still logged in",
+                "duration_minutes": s.get("duration_minutes", "N/A"),
+                "status": s.get("status", "unknown")
+            }
+            for s in sessions
+        ]
+    }
 
 @app.get("/api/admin/login-logs")
 def get_login_logs(
@@ -3034,16 +3186,16 @@ def get_login_logs(
     days: int = 30
 ):
     """Get login/logout logs"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
+    if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
         start_date = datetime.utcnow() - timedelta(days=days)
         
-        # Only show recruiter logs, filter by role if possible, or just exclude admins
+        # Only show recruiter logs, exclude admins
         query = {
             "login_time": {"$gte": start_date},
-            "role": {"$ne": "admin"} # Filter out admins
+            "role": {"$ne": "admin"}
         }
         if recruiter_id:
             query["recruiter_id"] = recruiter_id
@@ -3070,21 +3222,14 @@ def get_login_logs(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/api/admin/assign-task")
 def assign_task(
     request: TaskAssignmentRequest,
     current_user=Depends(get_current_user)
 ):
     """Assign task to recruiter"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
+    if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
-    result = TaskAssignmentManager.assign_task(
-        request.task_id,
-        request.recruiter_ids[0] if request.recruiter_ids else None, # Fallback for single, but we use list
-        current_user["id"]
-    )
     
     # Actually update to support multiple
     if request.recruiter_ids:
@@ -3101,7 +3246,7 @@ def create_assign_task(
     current_user=Depends(get_current_user)
 ):
     """Create and assign a new task directly to multiple recruiters"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
+    if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
     # Create task
@@ -3128,21 +3273,11 @@ def create_assign_task(
         "task_id": str(result.inserted_id)
     }
 
-
-@app.get("/api/admin/recruiters")
-def get_all_recruiters(current_user=Depends(get_current_user)):
-    """Get all recruiters for dropdown"""
-    if not AdminAuthManager.is_admin(current_user["id"]):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    return TaskAssignmentManager.get_all_recruiters()
-
-
 @app.get("/api/admin/workload-report")
 def get_workload_report(current_user=Depends(get_current_user)):
     """Get detailed workload report"""
     try:
-        if not AdminAuthManager.is_admin(current_user["id"]):
+        if current_user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Admin access required")
         
         workloads = WorkloadMonitor.get_all_recruiters_workload()
@@ -3169,10 +3304,6 @@ def get_workload_report(current_user=Depends(get_current_user)):
         print(f"❌ WORKLOAD REPORT ERROR: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
-# ============================================================
-# RUN
-# ============================================================
 
 if __name__ == "__main__":
     import uvicorn
