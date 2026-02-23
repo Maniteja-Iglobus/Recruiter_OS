@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recruiter OS | Admin Dashboard</title>
+    <meta name="description"
+        content="AI-Powered Recruiter OS - Manage tasks, candidates, interviews, and workload. Admin dashboard with real-time monitoring.">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="admin-dashboard.css?v=6">
+</head>
+
+<body>
+
+    <!-- ==================== TOAST CONTAINER ==================== -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- ==================== MOBILE TOGGLE ==================== -->
+    <button id="mobile-toggle" class="mobile-toggle">☰</button>
+
+    <!-- ==================== LOGIN PAGE ==================== -->
+    <div id="login-page" class="login-wrapper">
+        <div class="login-card">
+            <div class="logo">
+                <h1>🎯 Recruiter OS</h1>
+                <p>AI-Powered Recruitment Platform</p>
+            </div>
+
+            <!-- Role Switcher -->
+            <div class="role-switcher" id="role-switcher">
+                <button class="role-btn active" data-role="recruiter" onclick="switchLoginRole('recruiter')">👤
+                    Recruiter</button>
+                <button class="role-btn" data-role="admin" onclick="switchLoginRole('admin')">🔐 Admin</button>
+            </div>
+
+            <!-- Recruiter Login/Register -->
+            <div id="recruiter-login-panel">
+                <div class="login-tabs">
+                    <button class="login-tab active" onclick="switchLoginTab('login')">🔓 Login</button>
+                    <button class="login-tab" onclick="switchLoginTab('register')">📝 Register</button>
+                </div>
+
+                <!-- Recruiter Login -->
+                <div id="recruiter-login-form-wrap">
+                    <div id="recruiter-login-error" class="login-error"></div>
+                    <form id="recruiter-login-form" autocomplete="off">
+                        <div class="form-group">
+                            <label for="rec-login-username">Username</label>
+                            <input type="text" id="rec-login-username" placeholder="Enter your username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="rec-login-password">Password</label>
+                            <input type="password" id="rec-login-password" placeholder="Enter your password" required>
+                        </div>
+                        <button type="submit" id="rec-login-btn" class="btn btn-primary">🔓 Login</button>
+                    </form>
+                </div>
+
+                <!-- Recruiter Register -->
+                <div id="recruiter-register-form-wrap" style="display:none">
+                    <div id="recruiter-register-error" class="login-error"></div>
+                    <form id="recruiter-register-form" autocomplete="off">
+                        <div class="form-group">
+                            <label for="rec-reg-username">Username</label>
+                            <input type="text" id="rec-reg-username" placeholder="Choose a username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="rec-reg-email">Email Address</label>
+                            <input type="email" id="rec-reg-email" placeholder="your@email.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="rec-reg-password">Password</label>
+                            <input type="password" id="rec-reg-password" placeholder="Create a password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="rec-reg-confirm">Confirm Password</label>
+                            <input type="password" id="rec-reg-confirm" placeholder="Confirm your password" required>
+                        </div>
+                        <button type="submit" id="rec-reg-btn" class="btn btn-primary">📝 Register</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Admin Login -->
+            <div id="admin-login-panel" style="display:none">
+                <div id="admin-login-error" class="login-error"></div>
+                <form id="admin-login-form" autocomplete="off">
+                    <div class="form-group">
+                        <label for="login-username">Admin Username</label>
+                        <input type="text" id="login-username" placeholder="Enter admin username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Admin Password</label>
+                        <input type="password" id="login-password" placeholder="Enter admin password" required>
+                    </div>
+                    <button type="submit" id="login-btn" class="btn btn-primary">🔐 Admin Login</button>
+                </form>
+            </div>
+
+            <div class="login-features">
+                <h4 id="login-features-title">🎯 Recruiter Features</h4>
+                <ul id="login-features-list">
+                    <li>📋 Smart task management with AI extraction</li>
+                    <li>👥 Candidate tracking & resume parsing</li>
+                    <li>📅 Interview scheduling with Google Calendar</li>
+                    <li>📊 Workload monitoring & EOD reports</li>
+                    <li>🤖 AI chatbot assistant</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== DASHBOARD PAGE (BOTH ROLES) ==================== -->
+    <div id="dashboard-page" class="dashboard-layout hidden">
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="main-sidebar">
+            <div class="sidebar-header">
+                <div class="header-content">
+                    <div>
+                        <h1>🎯 Recruiter OS</h1>
+                        <p id="sidebar-role-label">Recruiter Dashboard</p>
+                    </div>
+                    <button class="collapse-btn" onclick="toggleSidebar()">☰</button>
+                </div>
+            </div>
+
+            <div class="sidebar-user">
+                <div class="user-badge">
+                    <div class="user-avatar" id="sidebar-user-avatar">U</div>
+                    <div class="user-meta">
+                        <div class="name" id="sidebar-user-name">User</div>
+                        <div class="email" id="sidebar-user-email">user@email.com</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recruiter Nav -->
+            <nav class="sidebar-nav" id="recruiter-nav">
+                <div class="nav-label">Pages</div>
+                <div class="nav-item active" data-page="rec-dashboard" data-tooltip="Dashboard"><span
+                        class="icon">📊</span> Dashboard</div>
+                <div class="nav-item" data-page="rec-tasks" data-tooltip="All Tasks"><span class="icon">📋</span> All
+                    Tasks</div>
+                <div class="nav-item" data-page="rec-extract" data-tooltip="Extract & Upload"><span
+                        class="icon">🔍</span> Extract & Upload</div>
+                <div class="nav-item" data-page="rec-interview" data-tooltip="Interview Agent"><span
+                        class="icon">📅</span> Interview Agent</div>
+                <div class="nav-item" data-page="rec-eod" data-tooltip="Workload & EOD"><span class="icon">📊</span>
+                    Workload & EOD</div>
+            </nav>
+
+            <!-- Admin Nav -->
+            <nav class="sidebar-nav hidden" id="admin-nav">
+                <div class="nav-label">Main</div>
+                <div class="nav-item active" data-page="dashboard" data-tooltip="Dashboard"><span class="icon">📊</span>
+                    Dashboard</div>
+                <div class="nav-item" data-page="recruiters" data-tooltip="Recruiters"><span class="icon">👥</span>
+                    Recruiters</div>
+                <div class="nav-item" data-page="activity" data-tooltip="Activity Logs"><span class="icon">🕐</span>
+                    Activity Logs</div>
+                <div class="nav-item" data-page="workload" data-tooltip="Workload Report"><span class="icon">📈</span>
+                    Workload Report</div>
+                <div class="nav-label">System</div>
+                <div class="nav-item" data-page="settings" data-tooltip="Settings"><span class="icon">⚙️</span> Settings
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button class="logout-btn" id="logout-btn">🚪 Logout</button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+
+            <!-- ========== RECRUITER PAGES ========== -->
+
+            <!-- Recruiter: Dashboard Overview -->
+            <section id="page-rec-dashboard" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1>📊 Dashboard Overview</h1>
+                        <p class="subtitle" id="rec-welcome-msg">Welcome back!</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn btn-outline btn-sm" onclick="loadRecDashboard()">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div id="rec-dashboard-content">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading dashboard...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recruiter: All Tasks -->
+            <section id="page-rec-tasks" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1>📋 All Tasks</h1>
+                        <p class="subtitle">Manage tasks and candidates</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn btn-outline btn-sm" onclick="loadRecTasks()">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div id="rec-tasks-content">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading tasks...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recruiter: Extract & Upload -->
+            <section id="page-rec-extract" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1>🔍 Extract & Upload JD</h1>
+                        <p class="subtitle">AI-powered job description extraction</p>
+                    </div>
+                </div>
+                <div id="rec-extract-content">
+                    <div class="data-card">
+                        <div class="data-card-header">
+                            <h3>🤖 AI Agent Extraction</h3>
+                        </div>
+                        <div class="data-card-body" style="padding:24px">
+                            <div class="alert alert-info">Upload one or more JD files (PDF, TXT, DOCX) or paste the text
+                                below. Our AI will extract job requirements and create tasks automatically.</div>
+
+                            <div class="form-row" style="margin-top:16px">
+                                <div class="form-col" style="flex:2">
+                                    <label>📁 Upload JD File(s)</label>
+                                    <input type="file" id="jd-file-input" accept=".pdf,.txt,.docx" multiple
+                                        class="file-input">
+                                    <div id="jd-file-list" class="file-list"></div>
+                                </div>
+                            </div>
+
+                            <div
+                                style="text-align:center;padding:12px 0;color:var(--text-muted);font-size:12px;font-weight:600">
+                                — OR —</div>
+
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <label>📝 Paste Job Description</label>
+                                    <textarea id="jd-text-input" rows="8"
+                                        placeholder="Job Title: ...&#10;Responsibilities: ...&#10;Required Skills: ..."></textarea>
+                                </div>
+                            </div>
+
+                            <button class="btn btn-primary" onclick="handleExtractJD()" id="extract-jd-btn"
+                                style="margin-top:12px;width:100%">🔍 Extract & Create Task(s)</button>
+                        </div>
+                    </div>
+                    <div id="extract-results"></div>
+                </div>
+            </section>
+
+            <!-- Recruiter: Interview Agent -->
+            <section id="page-rec-interview" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1>📅 Interview Scheduling Agent</h1>
+                        <p class="subtitle">Automate interview invites — synced with Google Calendar</p>
+                    </div>
+                </div>
+                <div id="rec-interview-content">
+                    <div class="data-card">
+                        <div class="data-card-header">
+                            <h3>📅 Schedule New Interview</h3>
+                        </div>
+                        <div class="data-card-body" style="padding:24px">
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <label>Select Role (Task)</label>
+                                    <select id="interview-task-select">
+                                        <option value="">Loading tasks...</option>
+                                    </select>
+                                </div>
+                                <div class="form-col">
+                                    <label>Select Candidates</label>
+                                    <div id="interview-candidate-multi" class="multi-select"></div>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <label>Interview Date</label>
+                                    <input type="date" id="interview-date">
+                                </div>
+                                <div class="form-col">
+                                    <label>Time Slot</label>
+                                    <select id="interview-time-select">
+                                        <option value="">Get suggestions first</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-outline btn-sm btn-block" onclick="getSlotSuggestions()">🔍 Get
+                                    Slots</button>
+                            </div>
+                            <div class="form-col" style="max-width:40px; display:flex; align-items:flex-end;">
+                                <button class="btn btn-sm btn-info" onclick="toggleCustomTimePicker()"
+                                    title="Custom Time">🕒</button>
+                            </div>
+                        </div>
+
+                        <!-- Custom Time Picker UI -->
+                        <div id="custom-time-picker"
+                            style="display:none; padding:15px; background:var(--bg-secondary); border-radius:8px; margin-bottom:15px; border:1px solid var(--border);">
+                            <h4 style="font-size:13px; margin-bottom:10px;">⏰ Set Custom Time</h4>
+                            <div style="display:flex; gap:10px; align-items:center;">
+                                <select id="custom-h" style="width:60px;">
+                                    <option>1</option>
+                                    <option>2</option>
+                                    <option>3</option>
+                                    <option>4</option>
+                                    <option>5</option>
+                                    <option>6</option>
+                                    <option>7</option>
+                                    <option>8</option>
+                                    <option selected>9</option>
+                                    <option>10</option>
+                                    <option>11</option>
+                                    <option>12</option>
+                                </select>
+                                <span>:</span>
+                                <select id="custom-m" style="width:60px;">
+                                    <option>00</option>
+                                    <option>15</option>
+                                    <option>30</option>
+                                    <option>45</option>
+                                </select>
+                                <select id="custom-p" style="width:60px;">
+                                    <option>AM</option>
+                                    <option>PM</option>
+                                </select>
+                                <button class="btn btn-sm btn-primary" onclick="applyCustomTime()">Apply</button>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label>Location</label>
+                                <select id="interview-location">
+                                    <option>Virtual</option>
+                                    <option>In-Person</option>
+                                </select>
+                            </div>
+                            <div class="form-col">
+                                <label>Meeting Link</label>
+                                <input id="interview-meeting-link" placeholder="e.g., https://meet.google.com/...">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="handleSendInvites()"
+                            style="margin-top:12px;width:100%">✉️ Send Invites to Selected Candidates</button>
+                    </div>
+                </div>
+                <div id="interview-results"></div>
+    </div>
+    </section>
+
+    <!-- Recruiter: Workload & EOD -->
+    <section id="page-rec-eod" class="page-section">
+        <div class="page-header">
+            <div>
+                <h1>📊 Workload & EOD Agent</h1>
+                <p class="subtitle">Monitor daily progress and generate comprehensive reports</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-outline btn-sm" onclick="handleCheckWorkload()">🔄 Refresh Status</button>
+            </div>
+        </div>
+
+        <div id="rec-eod-dashboard">
+            <!-- Workload Stats Grid -->
+            <div class="metrics-grid" id="rec-workload-metrics">
+                <div class="metric-card info">
+                    <div class="label">Total Active Tasks</div>
+                    <div class="value" id="val-total-tasks">-</div>
+                </div>
+                <div class="metric-card warning">
+                    <div class="label">Pending Tasks</div>
+                    <div class="value" id="val-pending-tasks">-</div>
+                </div>
+                <div class="metric-card accent">
+                    <div class="label">Workload Load</div>
+                    <div class="value" id="val-workload-percent">-%</div>
+                </div>
+                <div class="metric-card success">
+                    <div class="label">Avg Completion Time</div>
+                    <div class="value" id="val-avg-time">-h</div>
+                </div>
+            </div>
+
+            <div class="grid-section"
+                style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+                <!-- Workload Risk Analysis -->
+                <div class="data-card">
+                    <div class="data-card-header">
+                        <h3>⚠️ Risk & Recommendations</h3>
+                    </div>
+                    <div class="data-card-body" id="rec-workload-analysis" style="padding:24px; min-height: 200px;">
+                        <div class="loading-state">
+                            <div class="spinner"></div>
+                            <p>Analyzing workload...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EOD Generator Action -->
+                <div class="data-card">
+                    <div class="data-card-header">
+                        <h3>📝 End of Day Summary</h3>
+                    </div>
+                    <div class="data-card-body"
+                        style="padding:24px; min-height: 200px; display: flex; flex-direction: column; justify-content: space-between;">
+                        <p style="color:var(--text-secondary); font-size:14px; line-height:1.6;">
+                            Generate a detailed report of your daily activities, including tasks processed, interviews
+                            scheduled, and upcoming priorities.
+                        </p>
+                        <div class="alert alert-info" style="font-size: 13px; margin: 15px 0;">
+                            📧 A copy will be automatically emailed to your registered address.
+                        </div>
+                        <button class="btn btn-primary btn-block" onclick="handleGenerateEOD()" id="eod-btn">
+                            📝 Generate Comprehensive EOD Report
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EOD Report Result -->
+            <div id="eod-report-container" style="margin-top: 20px; display: none;">
+                <div class="data-card">
+                    <div class="data-card-header">
+                        <h3>📋 Generated EOD Report</h3>
+                        <button class="btn btn-sm btn-outline" onclick="printReport()">🖨️ Print</button>
+                    </div>
+                    <div class="data-card-body" id="eod-report-area" style="padding:30px; background: white;">
+                        <!-- Report content will be injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== ADMIN PAGES ========== -->
+
+    <section id="page-dashboard" class="page-section">
+        <div class="page-header">
+            <div>
+                <h1>📊 Admin Dashboard</h1>
+                <p class="subtitle">Real-time overview of your recruitment team</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-outline btn-sm" onclick="loadDashboard()">🔄 Refresh</button>
+            </div>
+        </div>
+        <div id="dashboard-content">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading dashboard...</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="page-recruiters" class="page-section">
+        <div class="page-header">
+            <div>
+                <h1>👥 Recruiter Management</h1>
+                <p class="subtitle">Manage and assign tasks to recruiters</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-outline btn-sm" onclick="loadRecruiters()">🔄 Refresh</button>
+            </div>
+        </div>
+        <div class="tabs-container" style="margin-bottom: 24px;">
+            <button class="tab-btn active" id="btn-rec-all" onclick="switchRecPage('all')">👥 All
+                Recruiters</button>
+            <button class="tab-btn" id="btn-rec-assign" onclick="switchRecPage('assign')">📋 Assign
+                Task</button>
+        </div>
+
+        <div id="rec-tab-all">
+            <div id="recruiters-content">
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading recruiters...</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="rec-tab-assign" style="display:none">
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3>📋 Assign & Create Tasks</h3>
+                </div>
+                <div class="data-card-body" style="padding:24px">
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label>Assignment Mode</label>
+                            <select id="assign-mode" onchange="switchAssignMode(this.value)">
+                                <option value="existing">Assign Existing Task</option>
+                                <option value="new">Create & Assign New Task</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="assign-existing-wrap" style="margin-top:20px">
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label>Select Unassigned Task</label>
+                                <select id="assign-task-select">
+                                    <option>Loading...</option>
+                                </select>
+                            </div>
+                            <div class="form-col">
+                                <label>Select Recruiters (Multi-select ctrl+click)</label>
+                                <select id="assign-rec-select" multiple style="height:100px">
+                                    <option>Loading...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="handleAssignExisting()"
+                            style="margin-top:15px;width:100%">✅ Assign Task</button>
+                    </div>
+                    <div id="assign-new-wrap" style="margin-top:20px; display:none">
+                        <div class="form-row">
+                            <div class="form-col"><label>Task Title</label><input id="new-task-title"
+                                    placeholder="e.g., Python Developer"></div>
+                            <div class="form-col"><label>Priority</label><select id="new-task-priority">
+                                    <option>High</option>
+                                    <option selected>Medium</option>
+                                    <option>Low</option>
+                                </select></div>
+                        </div>
+                        <div class="form-row" style="margin-top:10px">
+                            <div class="form-col"><label>Location</label><input id="new-task-loc"
+                                    placeholder="Remote/NY"></div>
+                            <div class="form-col"><label>Exp Required</label><input id="new-task-exp"
+                                    placeholder="3-5 years"></div>
+                        </div>
+                        <div class="form-row" style="margin-top:10px">
+                            <div class="form-col">
+                                <label>Assign to Recruiters (Multi-select)</label>
+                                <select id="new-task-recs" multiple style="height:80px"></select>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="handleCreateAssignNew()"
+                            style="margin-top:15px;width:100%">✅ Create & Assign</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="page-activity" class="page-section">
+        <div class="page-header">
+            <div>
+                <h1>🕐 Activity Logs</h1>
+                <p class="subtitle">Login/Logout history tracking</p>
+            </div>
+        </div>
+        <div id="activity-content">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading logs...</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="page-workload" class="page-section">
+        <div class="page-header">
+            <div>
+                <h1>📈 Workload Report</h1>
+                <p class="subtitle">Detailed workload analysis and recommendations</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-outline btn-sm" onclick="loadWorkloadReport()">🔄 Refresh</button>
+            </div>
+        </div>
+        <div id="workload-content">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading report...</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="page-settings" class="page-section">
+        <div class="page-header">
+            <div>
+                <h1>⚙️ Admin Settings</h1>
+                <p class="subtitle">System configuration and information</p>
+            </div>
+        </div>
+        <div id="settings-content">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading settings...</p>
+            </div>
+        </div>
+
+    </section>
+
+    </main>
+    </div>
+
+    <!-- ==================== CANDIDATE MODAL ==================== -->
+    <div class="modal-overlay" id="candidate-modal">
+        <div class="modal" style="max-width:700px">
+            <div class="modal-header">
+                <h3 id="candidate-modal-title">👥 Add Candidate</h3>
+                <button class="modal-close" onclick="closeCandidateModal()">×</button>
+            </div>
+            <div class="modal-body" id="candidate-modal-body"></div>
+        </div>
+    </div>
+
+    <!-- ==================== RECRUITER DETAIL MODAL ==================== -->
+    <div class="modal-overlay" id="recruiter-detail-modal">
+        <div class="modal" style="max-width:850px;max-height:90vh;overflow-y:auto">
+            <div class="modal-header">
+                <h3 id="recruiter-detail-title">👤 Recruiter Profile</h3>
+                <button class="modal-close" onclick="closeRecruiterDetailModal()">×</button>
+            </div>
+            <div class="modal-body" id="recruiter-detail-body"></div>
+        </div>
+    </div>
+
+    <!-- ==================== RESUME VIEWER MODAL ==================== -->
+    <div class="modal-overlay" id="resume-modal">
+        <div class="modal" style="max-width:900px;max-height:90vh">
+            <div class="modal-header">
+                <h3 id="resume-modal-title">📄 Resume Viewer</h3>
+                <button class="modal-close" onclick="closeResumeModal()">×</button>
+            </div>
+            <div class="modal-body" id="resume-modal-body" style="padding:0;min-height:500px"></div>
+        </div>
+    </div>
+
+    <!-- ==================== CHATBOT FAB & IFRAME ==================== -->
+    <div id="chatbot-wrapper"
+        style="position:fixed;bottom:20px;right:20px;z-index:999999;display:none;flex-direction:column;align-items:flex-end;gap:15px;font-family:'Inter',sans-serif;">
+        <div id="chatbot-iframe-container"
+            style="width:380px;height:600px;max-height:80vh;background:white;border-radius:16px;overflow:hidden;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);border:1px solid rgba(0,0,0,0.05);display:none;opacity:0;transform:translateY(20px);transition:all 0.3s cubic-bezier(0.4,0,0.2,1);">
+            <iframe id="chatbot-iframe" style="width:100%;height:100%;border:none;"></iframe>
+        </div>
+        <div id="chatbot-fab"
+            style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#6366f1 0%,#a855f7 100%);box-shadow:0 10px 15px -3px rgba(99,102,241,0.4);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);color:white;"
+            title="Chat with AI Assistant">
+            <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+        </div>
+    </div>
+
+    <!-- ==================== SCRIPTS ==================== -->
+    <script src="admin-dashboard.js?v=6"></script>
+    <script>
+        // Chatbot FAB integration
+        (function () {
+            const CHAT_WIDGET_URL = '/static/chat-widget.html';
+            const wrapper = document.getElementById('chatbot-wrapper');
+            const fab = document.getElementById('chatbot-fab');
+            const container = document.getElementById('chatbot-iframe-container');
+            const iframe = document.getElementById('chatbot-iframe');
+            let isOpen = false, iframeLoaded = false;
+
+            // Hook into auth to show/hide
+            const origShowDash = showDashboard;
+            showDashboard = function () { origShowDash(); wrapper.style.display = 'flex'; };
+            const origShowLogin = showLogin;
+            showLogin = function () { origShowLogin(); wrapper.style.display = 'none'; };
+
+            fab.addEventListener('click', () => {
+                isOpen = !isOpen;
+                if (isOpen) {
+                    if (!iframeLoaded) { iframe.src = CHAT_WIDGET_URL; iframeLoaded = true; }
+                    container.style.display = 'block';
+                    requestAnimationFrame(() => { container.style.opacity = '1'; container.style.transform = 'translateY(0)'; });
+                    fab.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+                } else {
+                    container.style.opacity = '0'; container.style.transform = 'translateY(20px)';
+                    setTimeout(() => { container.style.display = 'none'; }, 300);
+                    fab.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+                }
+            });
+            fab.onmouseenter = () => { fab.style.transform = 'scale(1.1) rotate(5deg)'; fab.style.boxShadow = '0 20px 25px -5px rgba(99,102,241,0.5)'; };
+            fab.onmouseleave = () => { fab.style.transform = 'scale(1)'; fab.style.boxShadow = '0 10px 15px -3px rgba(99,102,241,0.4)'; };
+        })();
+    </script>
+</body>
+
+</html>
