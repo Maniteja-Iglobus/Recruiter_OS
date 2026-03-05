@@ -8,7 +8,7 @@
     <meta name="description"
         content="AI-Powered Recruiter OS - Manage tasks, candidates, interviews, and workload. Admin dashboard with real-time monitoring.">
     <link rel="icon"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%236C47FF'/></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="admin-dashboard.css?v=12">
@@ -39,15 +39,15 @@
     <div id="login-page" class="login-wrapper">
         <div class="login-card">
             <div class="logo">
-                <h1>🎯 Recruiter OS</h1>
-                <p>AI-Powered Recruitment Platform</p>
+                <h1>Recruiter OS</h1>
+                <p>Advanced Recruitment Workspace</p>
             </div>
 
             <!-- Role Switcher -->
             <div class="role-switcher" id="role-switcher">
-                <button class="role-btn active" data-role="recruiter" onclick="switchLoginRole('recruiter')">👤
+                <button class="role-btn active" data-role="recruiter" onclick="switchLoginRole('recruiter')">
                     Recruiter</button>
-                <button class="role-btn" data-role="admin" onclick="switchLoginRole('admin')">🔐 Admin</button>
+                <button class="role-btn" data-role="admin" onclick="switchLoginRole('admin')">Admin</button>
             </div>
 
             <!-- Recruiter Login/Register -->
@@ -69,7 +69,7 @@
                             <label for="rec-login-password">Password</label>
                             <input type="password" id="rec-login-password" placeholder="Enter your password" required>
                         </div>
-                        <button type="submit" id="rec-login-btn" class="btn btn-primary">🔓 Login</button>
+                        <button type="submit" id="rec-login-btn" class="btn btn-primary">Login</button>
                     </form>
                 </div>
 
@@ -110,12 +110,12 @@
                         <label for="login-password">Admin Password</label>
                         <input type="password" id="login-password" placeholder="Enter admin password" required>
                     </div>
-                    <button type="submit" id="login-btn" class="btn btn-primary">🔐 Admin Login</button>
+                    <button type="submit" id="login-btn" class="btn btn-primary">Admin Login</button>
                 </form>
             </div>
 
             <div class="login-features">
-                <h4 id="login-features-title">🎯 Recruiter Features</h4>
+                <h4 id="login-features-title">Recruiter Features</h4>
                 <ul id="login-features-list">
                     <li> Smart task management with AI extraction</li>
                     <li> Candidate tracking & resume parsing</li>
@@ -421,13 +421,13 @@
                             </div>
                             <div class="form-col" style="max-width:40px; display:flex; align-items:flex-end;">
                                 <button class="btn btn-sm btn-info" onclick="toggleCustomTimePicker()"
-                                    title="Custom Time">🕒</button>
+                                    title="Custom Time">Custom</button>
                             </div>
 
                             <!-- Custom Time Picker UI -->
                             <div id="custom-time-picker"
                                 style="display:none; padding:15px; background:var(--bg-secondary); border-radius:8px; margin-bottom:15px; border:1px solid var(--border);">
-                                <h4 style="font-size:13px; margin-bottom:10px;">⏰ Set Custom Time</h4>
+                                <h4 style="font-size:13px; margin-bottom:10px;">Set Custom Time</h4>
                                 <div style="display:flex; gap:10px; align-items:center;">
                                     <select id="custom-h" style="width:60px;">
                                         <option>1</option>
@@ -471,7 +471,7 @@
                                 </div>
                             </div>
                             <button class="btn btn-primary" onclick="handleSendInvites()"
-                                style="margin-top:12px;width:100%">✉️ Send Invites to Selected Candidates</button>
+                                style="margin-top:12px;width:100%">Send Invites to Selected Candidates</button>
                         </div>
                     </div>
                     <div id="interview-results"></div>
@@ -591,7 +591,7 @@
                             style="padding: 24px; min-height: 120px;">
                             <div
                                 style="display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 13px; padding: 20px 0;">
-                                <span>📌</span>
+                                <span>•</span>
                                 <span>Activity data will appear after refreshing workload status.</span>
                             </div>
                         </div>
@@ -603,8 +603,8 @@
                             <div class="data-card-header">
                                 <h3> Generated EOD Report</h3>
                                 <div style="display: flex; gap: 8px;">
-                                    <button class="btn btn-sm btn-outline" onclick="copyReport()">📋 Copy</button>
-                                    <button class="btn btn-sm btn-outline" onclick="printReport()">🖨️ Print</button>
+                                    <button class="btn btn-sm btn-outline" onclick="copyReport()">Copy</button>
+                                    <button class="btn btn-sm btn-outline" onclick="printReport()">Print</button>
                                 </div>
                             </div>
                             <div class="data-card-body" id="eod-report-area" style="padding:30px; background: white;">
@@ -638,7 +638,7 @@
             <section id="page-recruiters" class="page-section">
                 <div class="page-header">
                     <div>
-                        <h1>👥 Recruiter Management</h1>
+                        <h1>Recruiter Management</h1>
                         <p class="subtitle">Manage and assign tasks to recruiters</p>
                     </div>
                     <div class="header-actions">
@@ -646,9 +646,9 @@
                     </div>
                 </div>
                 <div class="tabs-container" style="margin-bottom: 24px;">
-                    <button class="tab-btn active" id="btn-rec-all" onclick="switchRecPage('all')">👥 All
+                    <button class="tab-btn active" id="btn-rec-all" onclick="switchRecPage('all')">All
                         Recruiters</button>
-                    <button class="tab-btn" id="btn-rec-assign" onclick="switchRecPage('assign')">📋 Assign
+                    <button class="tab-btn" id="btn-rec-assign" onclick="switchRecPage('assign')">Assign
                         Task</button>
                 </div>
 
@@ -760,7 +760,7 @@
             <section id="page-settings" class="page-section">
                 <div class="page-header">
                     <div>
-                        <h1>⚙️ Admin Settings</h1>
+                        <h1>Admin Settings</h1>
                         <p class="subtitle">System configuration and information</p>
                     </div>
                 </div>
@@ -779,7 +779,7 @@
     <div class="modal-overlay" id="candidate-modal">
         <div class="modal" style="max-width:700px">
             <div class="modal-header">
-                <h3 id="candidate-modal-title">👥 Add Candidate</h3>
+                <h3 id="candidate-modal-title">Add Candidate</h3>
                 <button class="modal-close" onclick="closeCandidateModal()">×</button>
             </div>
             <div class="modal-body" id="candidate-modal-body"></div>
@@ -790,7 +790,7 @@
     <div class="modal-overlay" id="recruiter-detail-modal">
         <div class="modal" style="max-width:850px;max-height:90vh;overflow-y:auto">
             <div class="modal-header">
-                <h3 id="recruiter-detail-title">👤 Recruiter Profile</h3>
+                <h3 id="recruiter-detail-title">Recruiter Profile</h3>
                 <button class="modal-close" onclick="closeRecruiterDetailModal()">×</button>
             </div>
             <div class="modal-body" id="recruiter-detail-body"></div>
@@ -801,7 +801,7 @@
     <div class="modal-overlay" id="resume-modal">
         <div class="modal" style="max-width:900px;max-height:90vh">
             <div class="modal-header">
-                <h3 id="resume-modal-title">📄 Resume Viewer</h3>
+                <h3 id="resume-modal-title">Resume Viewer</h3>
                 <button class="modal-close" onclick="closeResumeModal()">×</button>
             </div>
             <div class="modal-body" id="resume-modal-body" style="padding:0;min-height:500px"></div>
