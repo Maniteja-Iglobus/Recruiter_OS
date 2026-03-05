@@ -1,4 +1,4 @@
-# 🎯 Recruiter OS - Agentic Recruitment Platform
+# 🎯 Recruiter OS -  Recruitment Platform
 
 Recruiter OS is an AI-powered recruitment automation platform designed to streamline end-to-end hiring workflows. From job description extraction to automated interview scheduling and workload monitoring, it leverages agentic AI to assist recruiters in managing their daily tasks efficiently.
 
