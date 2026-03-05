@@ -63,6 +63,8 @@ uvicorn app:app --host 127.0.0.1 --port 8000 --reload
 - `static/`: Frontend assets (Admin dashboard, CSS, and Chat widget).
 - `llm_extraction.py`: Helper scripts for AI-driven data extraction.
 - `requirements.txt`: Project dependencies.
+- `static`: Folder for Frontend of this application
+  
 
 ## 🤝 Contributing
 Feel free to fork this project and submit pull requests for any improvements or bug fixes.
