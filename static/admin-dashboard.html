@@ -11,10 +11,23 @@
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="admin-dashboard.css?v=6">
+    <link rel="stylesheet" href="admin-dashboard.css?v=12">
 </head>
 
 <body>
+
+    <!-- ==================== 3D ANIMATED BACKGROUND ==================== -->
+    <div id="global-3d-bg">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glass-shape shape-1"></div>
+        <div class="glass-shape shape-2"></div>
+        <div class="glass-shape shape-3"></div>
+        <div class="glass-shape shape-4"></div>
+        <div class="text-3d t-hrms">HRMS</div>
+        <div class="text-3d t-recruiter">RECRUITER OS</div>
+        <div class="particle-grid"></div>
+    </div>
 
     <!-- ==================== TOAST CONTAINER ==================== -->
     <div id="toast-container" class="toast-container"></div>
@@ -40,8 +53,8 @@
             <!-- Recruiter Login/Register -->
             <div id="recruiter-login-panel">
                 <div class="login-tabs">
-                    <button class="login-tab active" onclick="switchLoginTab('login')">🔓 Login</button>
-                    <button class="login-tab" onclick="switchLoginTab('register')">📝 Register</button>
+                    <button class="login-tab active" onclick="switchLoginTab('login')"> Login</button>
+                    <button class="login-tab" onclick="switchLoginTab('register')"> Register</button>
                 </div>
 
                 <!-- Recruiter Login -->
@@ -80,7 +93,7 @@
                             <label for="rec-reg-confirm">Confirm Password</label>
                             <input type="password" id="rec-reg-confirm" placeholder="Confirm your password" required>
                         </div>
-                        <button type="submit" id="rec-reg-btn" class="btn btn-primary">📝 Register</button>
+                        <button type="submit" id="rec-reg-btn" class="btn btn-primary"> Register</button>
                     </form>
                 </div>
             </div>
@@ -104,11 +117,11 @@
             <div class="login-features">
                 <h4 id="login-features-title">🎯 Recruiter Features</h4>
                 <ul id="login-features-list">
-                    <li>📋 Smart task management with AI extraction</li>
-                    <li>👥 Candidate tracking & resume parsing</li>
-                    <li>📅 Interview scheduling with Google Calendar</li>
-                    <li>📊 Workload monitoring & EOD reports</li>
-                    <li>🤖 AI chatbot assistant</li>
+                    <li> Smart task management with AI extraction</li>
+                    <li> Candidate tracking & resume parsing</li>
+                    <li> Interview scheduling with Google Calendar</li>
+                    <li> Workload monitoring & EOD reports</li>
+                    <li> AI chatbot assistant</li>
                 </ul>
             </div>
         </div>
@@ -119,59 +132,161 @@
 
         <!-- Sidebar -->
         <aside class="sidebar" id="main-sidebar">
+            <!-- Header: Logo + Collapse -->
             <div class="sidebar-header">
                 <div class="header-content">
-                    <div>
-                        <h1>🎯 Recruiter OS</h1>
-                        <p id="sidebar-role-label">Recruiter Dashboard</p>
+                    <div class="sidebar-brand">
+                        <div class="brand-logo">
+                            <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+                                <rect width="36" height="36" rx="10" fill="#6C47FF" />
+                                <rect x="8" y="8" width="8" height="8" rx="2" fill="white" />
+                                <rect x="20" y="8" width="8" height="8" rx="2" fill="white" />
+                                <rect x="8" y="20" width="8" height="8" rx="2" fill="white" />
+                                <rect x="20" y="20" width="8" height="8" rx="2" fill="white" />
+                            </svg>
+                        </div>
+                        <div class="brand-text">
+                            <span class="brand-name">Recruiter OS</span>
+                            <span class="brand-sub" id="sidebar-role-label">WORKSPACE</span>
+                        </div>
                     </div>
-                    <button class="collapse-btn" onclick="toggleSidebar()">☰</button>
+                    <button class="collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebar()"
+                        title="Collapse sidebar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                    </button>
                 </div>
             </div>
 
+            <!-- User Profile -->
             <div class="sidebar-user">
                 <div class="user-badge">
-                    <div class="user-avatar" id="sidebar-user-avatar">U</div>
+                    <div class="user-avatar-wrap">
+                        <div class="user-avatar" id="sidebar-user-avatar">U</div>
+                        <span class="online-dot"></span>
+                    </div>
                     <div class="user-meta">
                         <div class="name" id="sidebar-user-name">User</div>
-                        <div class="email" id="sidebar-user-email">user@email.com</div>
+                        <div class="role" id="sidebar-user-email">Recruiter</div>
                     </div>
                 </div>
             </div>
 
             <!-- Recruiter Nav -->
             <nav class="sidebar-nav" id="recruiter-nav">
-                <div class="nav-label">Pages</div>
-                <div class="nav-item active" data-page="rec-dashboard" data-tooltip="Dashboard"><span
-                        class="icon">📊</span> Dashboard</div>
-                <div class="nav-item" data-page="rec-tasks" data-tooltip="All Tasks"><span class="icon">📋</span> All
-                    Tasks</div>
-                <div class="nav-item" data-page="rec-extract" data-tooltip="Extract & Upload"><span
-                        class="icon">🔍</span> Extract & Upload</div>
-                <div class="nav-item" data-page="rec-interview" data-tooltip="Interview Agent"><span
-                        class="icon">📅</span> Interview Agent</div>
-                <div class="nav-item" data-page="rec-eod" data-tooltip="Workload & EOD"><span class="icon">📊</span>
-                    Workload & EOD</div>
+                <div class="nav-label">CORE PLATFORM</div>
+                <div class="nav-item active" data-page="rec-dashboard" data-tooltip="Dashboard">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg></span>
+                    <span class="nav-text">Dashboard</span>
+                </div>
+                <div class="nav-item" data-page="rec-tasks" data-tooltip="All Tasks">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                        </svg></span>
+                    <span class="nav-text">All Tasks</span>
+                </div>
+                <div class="nav-item" data-page="rec-extract" data-tooltip="Extract &amp; Upload">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg></span>
+                    <span class="nav-text">Extract &amp; Upload</span>
+                </div>
+                <div class="nav-item" data-page="rec-interview" data-tooltip="Interview Agent">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg></span>
+                    <span class="nav-text">Interview Agent</span>
+                </div>
+                <div class="nav-item" data-page="rec-eod" data-tooltip="Workload &amp; EOD">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                        </svg></span>
+                    <span class="nav-text">Workload &amp; EOD</span>
+                </div>
             </nav>
 
             <!-- Admin Nav -->
             <nav class="sidebar-nav hidden" id="admin-nav">
-                <div class="nav-label">Main</div>
-                <div class="nav-item active" data-page="dashboard" data-tooltip="Dashboard"><span class="icon">📊</span>
-                    Dashboard</div>
-                <div class="nav-item" data-page="recruiters" data-tooltip="Recruiters"><span class="icon">👥</span>
-                    Recruiters</div>
-                <div class="nav-item" data-page="activity" data-tooltip="Activity Logs"><span class="icon">🕐</span>
-                    Activity Logs</div>
-                <div class="nav-item" data-page="workload" data-tooltip="Workload Report"><span class="icon">📈</span>
-                    Workload Report</div>
-                <div class="nav-label">System</div>
-                <div class="nav-item" data-page="settings" data-tooltip="Settings"><span class="icon">⚙️</span> Settings
+                <div class="nav-label">ADMIN PANEL</div>
+                <div class="nav-item active" data-page="dashboard" data-tooltip="Dashboard">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg></span>
+                    <span class="nav-text">Dashboard</span>
+                </div>
+                <div class="nav-item" data-page="recruiters" data-tooltip="Recruiters">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg></span>
+                    <span class="nav-text">Recruiters</span>
+                </div>
+                <div class="nav-item" data-page="activity" data-tooltip="Activity Logs">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg></span>
+                    <span class="nav-text">Activity Logs</span>
+                </div>
+                <div class="nav-item" data-page="workload" data-tooltip="Workload Report">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                        </svg></span>
+                    <span class="nav-text">Workload Report</span>
+                </div>
+                <div class="nav-label">SYSTEM</div>
+                <div class="nav-item" data-page="settings" data-tooltip="Settings">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path
+                                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                            </path>
+                        </svg></span>
+                    <span class="nav-text">Settings</span>
                 </div>
             </nav>
 
+            <!-- Sidebar Footer -->
             <div class="sidebar-footer">
-                <button class="logout-btn" id="logout-btn">🚪 Logout</button>
+                <button class="logout-btn" id="logout-btn">
+                    <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg></span>
+                    <span class="logout-text">Logout session</span>
+                </button>
             </div>
         </aside>
 
@@ -184,7 +299,7 @@
             <section id="page-rec-dashboard" class="page-section">
                 <div class="page-header">
                     <div>
-                        <h1>📊 Dashboard Overview</h1>
+                        <h1> Dashboard Overview</h1>
                         <p class="subtitle" id="rec-welcome-msg">Welcome back!</p>
                     </div>
                     <div class="header-actions">
@@ -203,7 +318,7 @@
             <section id="page-rec-tasks" class="page-section">
                 <div class="page-header">
                     <div>
-                        <h1>📋 All Tasks</h1>
+                        <h1> All Tasks</h1>
                         <p class="subtitle">Manage tasks and candidates</p>
                     </div>
                     <div class="header-actions">
@@ -222,14 +337,14 @@
             <section id="page-rec-extract" class="page-section">
                 <div class="page-header">
                     <div>
-                        <h1>🔍 Extract & Upload JD</h1>
+                        <h1> Extract & Upload JD</h1>
                         <p class="subtitle">AI-powered job description extraction</p>
                     </div>
                 </div>
                 <div id="rec-extract-content">
                     <div class="data-card">
                         <div class="data-card-header">
-                            <h3>🤖 AI Agent Extraction</h3>
+                            <h3> AI Agent Extraction</h3>
                         </div>
                         <div class="data-card-body" style="padding:24px">
                             <div class="alert alert-info">Upload one or more JD files (PDF, TXT, DOCX) or paste the text
@@ -237,7 +352,7 @@
 
                             <div class="form-row" style="margin-top:16px">
                                 <div class="form-col" style="flex:2">
-                                    <label>📁 Upload JD File(s)</label>
+                                    <label> Upload JD File(s)</label>
                                     <input type="file" id="jd-file-input" accept=".pdf,.txt,.docx" multiple
                                         class="file-input">
                                     <div id="jd-file-list" class="file-list"></div>
@@ -250,14 +365,14 @@
 
                             <div class="form-row">
                                 <div class="form-col">
-                                    <label>📝 Paste Job Description</label>
+                                    <label>Paste Job Description</label>
                                     <textarea id="jd-text-input" rows="8"
                                         placeholder="Job Title: ...&#10;Responsibilities: ...&#10;Required Skills: ..."></textarea>
                                 </div>
                             </div>
 
                             <button class="btn btn-primary" onclick="handleExtractJD()" id="extract-jd-btn"
-                                style="margin-top:12px;width:100%">🔍 Extract & Create Task(s)</button>
+                                style="margin-top:12px;width:100%"> Extract & Create Task(s)</button>
                         </div>
                     </div>
                     <div id="extract-results"></div>
@@ -268,14 +383,14 @@
             <section id="page-rec-interview" class="page-section">
                 <div class="page-header">
                     <div>
-                        <h1>📅 Interview Scheduling Agent</h1>
+                        <h1> Interview Scheduling Agent</h1>
                         <p class="subtitle">Automate interview invites — synced with Google Calendar</p>
                     </div>
                 </div>
                 <div id="rec-interview-content">
                     <div class="data-card">
                         <div class="data-card-header">
-                            <h3>📅 Schedule New Interview</h3>
+                            <h3> Schedule New Interview</h3>
                         </div>
                         <div class="data-card-body" style="padding:24px">
                             <div class="form-row">
@@ -301,312 +416,363 @@
                                         <option value="">Get suggestions first</option>
                                     </select>
                                 </div>
-                                <button class="btn btn-outline btn-sm btn-block" onclick="getSlotSuggestions()">🔍 Get
+                                <button class="btn btn-outline btn-sm btn-block" onclick="getSlotSuggestions()"> Get
                                     Slots</button>
                             </div>
                             <div class="form-col" style="max-width:40px; display:flex; align-items:flex-end;">
                                 <button class="btn btn-sm btn-info" onclick="toggleCustomTimePicker()"
                                     title="Custom Time">🕒</button>
                             </div>
-                        </div>
 
-                        <!-- Custom Time Picker UI -->
-                        <div id="custom-time-picker"
-                            style="display:none; padding:15px; background:var(--bg-secondary); border-radius:8px; margin-bottom:15px; border:1px solid var(--border);">
-                            <h4 style="font-size:13px; margin-bottom:10px;">⏰ Set Custom Time</h4>
-                            <div style="display:flex; gap:10px; align-items:center;">
-                                <select id="custom-h" style="width:60px;">
-                                    <option>1</option>
-                                    <option>2</option>
-                                    <option>3</option>
-                                    <option>4</option>
-                                    <option>5</option>
-                                    <option>6</option>
-                                    <option>7</option>
-                                    <option>8</option>
-                                    <option selected>9</option>
-                                    <option>10</option>
-                                    <option>11</option>
-                                    <option>12</option>
-                                </select>
-                                <span>:</span>
-                                <select id="custom-m" style="width:60px;">
-                                    <option>00</option>
-                                    <option>15</option>
-                                    <option>30</option>
-                                    <option>45</option>
-                                </select>
-                                <select id="custom-p" style="width:60px;">
-                                    <option>AM</option>
-                                    <option>PM</option>
-                                </select>
-                                <button class="btn btn-sm btn-primary" onclick="applyCustomTime()">Apply</button>
+                            <!-- Custom Time Picker UI -->
+                            <div id="custom-time-picker"
+                                style="display:none; padding:15px; background:var(--bg-secondary); border-radius:8px; margin-bottom:15px; border:1px solid var(--border);">
+                                <h4 style="font-size:13px; margin-bottom:10px;">⏰ Set Custom Time</h4>
+                                <div style="display:flex; gap:10px; align-items:center;">
+                                    <select id="custom-h" style="width:60px;">
+                                        <option>1</option>
+                                        <option>2</option>
+                                        <option>3</option>
+                                        <option>4</option>
+                                        <option>5</option>
+                                        <option>6</option>
+                                        <option>7</option>
+                                        <option>8</option>
+                                        <option selected>9</option>
+                                        <option>10</option>
+                                        <option>11</option>
+                                        <option>12</option>
+                                    </select>
+                                    <span>:</span>
+                                    <select id="custom-m" style="width:60px;">
+                                        <option>00</option>
+                                        <option>15</option>
+                                        <option>30</option>
+                                        <option>45</option>
+                                    </select>
+                                    <select id="custom-p" style="width:60px;">
+                                        <option>AM</option>
+                                        <option>PM</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-primary" onclick="applyCustomTime()">Apply</button>
+                                </div>
                             </div>
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <label>Location</label>
+                                    <select id="interview-location">
+                                        <option>Virtual</option>
+                                        <option>In-Person</option>
+                                    </select>
+                                </div>
+                                <div class="form-col">
+                                    <label>Meeting Link</label>
+                                    <input id="interview-meeting-link" placeholder="e.g., https://meet.google.com/...">
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" onclick="handleSendInvites()"
+                                style="margin-top:12px;width:100%">✉️ Send Invites to Selected Candidates</button>
                         </div>
-                        <div class="form-row">
-                            <div class="form-col">
-                                <label>Location</label>
-                                <select id="interview-location">
-                                    <option>Virtual</option>
-                                    <option>In-Person</option>
-                                </select>
-                            </div>
-                            <div class="form-col">
-                                <label>Meeting Link</label>
-                                <input id="interview-meeting-link" placeholder="e.g., https://meet.google.com/...">
-                            </div>
-                        </div>
-                        <button class="btn btn-primary" onclick="handleSendInvites()"
-                            style="margin-top:12px;width:100%">✉️ Send Invites to Selected Candidates</button>
+                    </div>
+                    <div id="interview-results"></div>
+                </div>
+            </section>
+
+            <!-- Recruiter: Workload & EOD -->
+            <section id="page-rec-eod" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1>Workload & EOD Agent</h1>
+                        <p class="subtitle">Monitor daily progress and generate comprehensive reports</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn btn-outline btn-sm" onclick="handleCheckWorkload()">🔄 Refresh
+                            Status</button>
                     </div>
                 </div>
-                <div id="interview-results"></div>
-    </div>
-    </section>
 
-    <!-- Recruiter: Workload & EOD -->
-    <section id="page-rec-eod" class="page-section">
-        <div class="page-header">
-            <div>
-                <h1>📊 Workload & EOD Agent</h1>
-                <p class="subtitle">Monitor daily progress and generate comprehensive reports</p>
-            </div>
-            <div class="header-actions">
-                <button class="btn btn-outline btn-sm" onclick="handleCheckWorkload()">🔄 Refresh Status</button>
-            </div>
-        </div>
-
-        <div id="rec-eod-dashboard">
-            <!-- Workload Stats Grid -->
-            <div class="metrics-grid" id="rec-workload-metrics">
-                <div class="metric-card info">
-                    <div class="label">Total Active Tasks</div>
-                    <div class="value" id="val-total-tasks">-</div>
-                </div>
-                <div class="metric-card warning">
-                    <div class="label">Pending Tasks</div>
-                    <div class="value" id="val-pending-tasks">-</div>
-                </div>
-                <div class="metric-card accent">
-                    <div class="label">Workload Load</div>
-                    <div class="value" id="val-workload-percent">-%</div>
-                </div>
-                <div class="metric-card success">
-                    <div class="label">Avg Completion Time</div>
-                    <div class="value" id="val-avg-time">-h</div>
-                </div>
-            </div>
-
-            <div class="grid-section"
-                style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
-                <!-- Workload Risk Analysis -->
-                <div class="data-card">
-                    <div class="data-card-header">
-                        <h3>⚠️ Risk & Recommendations</h3>
+                <div id="rec-eod-dashboard">
+                    <!-- Workload Stats Grid -->
+                    <div class="metrics-grid" id="rec-workload-metrics">
+                        <div class="metric-card info">
+                            <div class="metric-icon"></div>
+                            <div class="label">Total Active Tasks</div>
+                            <div class="value" id="val-total-tasks">-</div>
+                        </div>
+                        <div class="metric-card warning">
+                            <div class="metric-icon"></div>
+                            <div class="label">Pending Tasks</div>
+                            <div class="value" id="val-pending-tasks">-</div>
+                        </div>
+                        <div class="metric-card accent">
+                            <div class="metric-icon"></div>
+                            <div class="label">Workload Load</div>
+                            <div class="value" id="val-workload-percent">-%</div>
+                        </div>
+                        <div class="metric-card success">
+                            <div class="metric-icon"></div>
+                            <div class="label">Avg Completion Time</div>
+                            <div class="value" id="val-avg-time">-h</div>
+                        </div>
                     </div>
-                    <div class="data-card-body" id="rec-workload-analysis" style="padding:24px; min-height: 200px;">
+
+                    <!-- Workload Progress Bar -->
+                    <div class="data-card" style="margin-bottom: 20px;">
+                        <div class="data-card-body" style="padding: 20px 24px;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Daily
+                                    Workload Capacity</span>
+                                <span id="workload-bar-label"
+                                    style="font-size: 13px; font-weight: 700; color: var(--accent);">--%</span>
+                            </div>
+                            <div class="progress-bar-wrapper" style="height: 12px;">
+                                <div id="workload-bar-fill" class="progress-bar-fill progress-green"
+                                    style="width: 0%; transition: width 1s ease;"></div>
+                            </div>
+                            <div
+                                style="margin-top: 10px; font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between;">
+                                <span>Healthy (0-50%)</span>
+                                <span>Moderate (51-80%)</span>
+                                <span>High (81%+)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-section">
+                        <!-- Workload Risk Analysis -->
+                        <div class="data-card">
+                            <div class="data-card-header">
+                                <h3>Risk & Recommendations</h3>
+                                <span class="badge badge-pending" id="risk-level-badge">Analyzing...</span>
+                            </div>
+                            <div class="data-card-body" id="rec-workload-analysis"
+                                style="padding:24px; min-height: 240px;">
+                                <div class="loading-state">
+                                    <div class="spinner"></div>
+                                    <p>Analyzing workload...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- EOD Generator Action -->
+                        <div class="data-card">
+                            <div class="data-card-header">
+                                <h3>End of Day Summary</h3>
+                            </div>
+                            <div class="data-card-body"
+                                style="padding:24px; min-height: 240px; display: flex; flex-direction: column; justify-content: space-between;">
+                                <div>
+                                    <p
+                                        style="color:var(--text-secondary); font-size:14px; line-height:1.7; margin-bottom: 12px;">
+                                        Generate a detailed report of your daily activities, including tasks processed,
+                                        interviews
+                                        scheduled, and upcoming priorities.
+                                    </p>
+                                    <div class="alert alert-info" style="font-size: 13px; margin: 0 0 16px 0;">
+                                        A copy will be automatically emailed to your registered address.
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary btn-block" onclick="handleGenerateEOD()" id="eod-btn"
+                                    style="padding: 14px 24px; font-size: 15px;">
+                                    Generate Comprehensive EOD Report
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Today's Activity Timeline -->
+                    <div class="data-card" style="margin-top: 20px;">
+                        <div class="data-card-header">
+                            <h3> Today's Activity Timeline</h3>
+                            <span style="font-size: 12px; color: var(--text-muted);" id="eod-date-label"></span>
+                        </div>
+                        <div class="data-card-body" id="eod-activity-timeline"
+                            style="padding: 24px; min-height: 120px;">
+                            <div
+                                style="display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 13px; padding: 20px 0;">
+                                <span>📌</span>
+                                <span>Activity data will appear after refreshing workload status.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EOD Report Result -->
+                    <div id="eod-report-container" style="margin-top: 20px; display: none;">
+                        <div class="data-card">
+                            <div class="data-card-header">
+                                <h3> Generated EOD Report</h3>
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn btn-sm btn-outline" onclick="copyReport()">📋 Copy</button>
+                                    <button class="btn btn-sm btn-outline" onclick="printReport()">🖨️ Print</button>
+                                </div>
+                            </div>
+                            <div class="data-card-body" id="eod-report-area" style="padding:30px; background: white;">
+                                <!-- Report content will be injected here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========== ADMIN PAGES ========== -->
+
+            <section id="page-dashboard" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1> Admin Dashboard</h1>
+                        <p class="subtitle">Real-time overview of your recruitment team</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn btn-outline btn-sm" onclick="loadDashboard()">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div id="dashboard-content">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading dashboard...</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="page-recruiters" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1>👥 Recruiter Management</h1>
+                        <p class="subtitle">Manage and assign tasks to recruiters</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn btn-outline btn-sm" onclick="loadRecruiters()">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div class="tabs-container" style="margin-bottom: 24px;">
+                    <button class="tab-btn active" id="btn-rec-all" onclick="switchRecPage('all')">👥 All
+                        Recruiters</button>
+                    <button class="tab-btn" id="btn-rec-assign" onclick="switchRecPage('assign')">📋 Assign
+                        Task</button>
+                </div>
+
+                <div id="rec-tab-all">
+                    <div id="recruiters-content">
                         <div class="loading-state">
                             <div class="spinner"></div>
-                            <p>Analyzing workload...</p>
+                            <p>Loading recruiters...</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- EOD Generator Action -->
-                <div class="data-card">
-                    <div class="data-card-header">
-                        <h3>📝 End of Day Summary</h3>
-                    </div>
-                    <div class="data-card-body"
-                        style="padding:24px; min-height: 200px; display: flex; flex-direction: column; justify-content: space-between;">
-                        <p style="color:var(--text-secondary); font-size:14px; line-height:1.6;">
-                            Generate a detailed report of your daily activities, including tasks processed, interviews
-                            scheduled, and upcoming priorities.
-                        </p>
-                        <div class="alert alert-info" style="font-size: 13px; margin: 15px 0;">
-                            📧 A copy will be automatically emailed to your registered address.
+                <div id="rec-tab-assign" style="display:none">
+                    <div class="data-card">
+                        <div class="data-card-header">
+                            <h3> Assign & Create Tasks</h3>
                         </div>
-                        <button class="btn btn-primary btn-block" onclick="handleGenerateEOD()" id="eod-btn">
-                            📝 Generate Comprehensive EOD Report
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- EOD Report Result -->
-            <div id="eod-report-container" style="margin-top: 20px; display: none;">
-                <div class="data-card">
-                    <div class="data-card-header">
-                        <h3>📋 Generated EOD Report</h3>
-                        <button class="btn btn-sm btn-outline" onclick="printReport()">🖨️ Print</button>
-                    </div>
-                    <div class="data-card-body" id="eod-report-area" style="padding:30px; background: white;">
-                        <!-- Report content will be injected here -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ========== ADMIN PAGES ========== -->
-
-    <section id="page-dashboard" class="page-section">
-        <div class="page-header">
-            <div>
-                <h1>📊 Admin Dashboard</h1>
-                <p class="subtitle">Real-time overview of your recruitment team</p>
-            </div>
-            <div class="header-actions">
-                <button class="btn btn-outline btn-sm" onclick="loadDashboard()">🔄 Refresh</button>
-            </div>
-        </div>
-        <div id="dashboard-content">
-            <div class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading dashboard...</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="page-recruiters" class="page-section">
-        <div class="page-header">
-            <div>
-                <h1>👥 Recruiter Management</h1>
-                <p class="subtitle">Manage and assign tasks to recruiters</p>
-            </div>
-            <div class="header-actions">
-                <button class="btn btn-outline btn-sm" onclick="loadRecruiters()">🔄 Refresh</button>
-            </div>
-        </div>
-        <div class="tabs-container" style="margin-bottom: 24px;">
-            <button class="tab-btn active" id="btn-rec-all" onclick="switchRecPage('all')">👥 All
-                Recruiters</button>
-            <button class="tab-btn" id="btn-rec-assign" onclick="switchRecPage('assign')">📋 Assign
-                Task</button>
-        </div>
-
-        <div id="rec-tab-all">
-            <div id="recruiters-content">
-                <div class="loading-state">
-                    <div class="spinner"></div>
-                    <p>Loading recruiters...</p>
-                </div>
-            </div>
-        </div>
-
-        <div id="rec-tab-assign" style="display:none">
-            <div class="data-card">
-                <div class="data-card-header">
-                    <h3>📋 Assign & Create Tasks</h3>
-                </div>
-                <div class="data-card-body" style="padding:24px">
-                    <div class="form-row">
-                        <div class="form-col">
-                            <label>Assignment Mode</label>
-                            <select id="assign-mode" onchange="switchAssignMode(this.value)">
-                                <option value="existing">Assign Existing Task</option>
-                                <option value="new">Create & Assign New Task</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div id="assign-existing-wrap" style="margin-top:20px">
-                        <div class="form-row">
-                            <div class="form-col">
-                                <label>Select Unassigned Task</label>
-                                <select id="assign-task-select">
-                                    <option>Loading...</option>
-                                </select>
+                        <div class="data-card-body" style="padding:24px">
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <label>Assignment Mode</label>
+                                    <select id="assign-mode" onchange="switchAssignMode(this.value)">
+                                        <option value="existing">Assign Existing Task</option>
+                                        <option value="new">Create & Assign New Task</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="form-col">
-                                <label>Select Recruiters (Multi-select ctrl+click)</label>
-                                <select id="assign-rec-select" multiple style="height:100px">
-                                    <option>Loading...</option>
-                                </select>
+                            <div id="assign-existing-wrap" style="margin-top:20px">
+                                <div class="form-row">
+                                    <div class="form-col">
+                                        <label>Select Unassigned Task</label>
+                                        <select id="assign-task-select">
+                                            <option>Loading...</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-col">
+                                        <label>Select Recruiters (Multi-select ctrl+click)</label>
+                                        <select id="assign-rec-select" multiple style="height:100px">
+                                            <option>Loading...</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary" onclick="handleAssignExisting()"
+                                    style="margin-top:15px;width:100%"> Assign Task</button>
+                            </div>
+                            <div id="assign-new-wrap" style="margin-top:20px; display:none">
+                                <div class="form-row">
+                                    <div class="form-col"><label>Task Title</label><input id="new-task-title"
+                                            placeholder="e.g., Python Developer"></div>
+                                    <div class="form-col"><label>Priority</label><select id="new-task-priority">
+                                            <option>High</option>
+                                            <option selected>Medium</option>
+                                            <option>Low</option>
+                                        </select></div>
+                                </div>
+                                <div class="form-row" style="margin-top:10px">
+                                    <div class="form-col"><label>Location</label><input id="new-task-loc"
+                                            placeholder="Remote/NY"></div>
+                                    <div class="form-col"><label>Exp Required</label><input id="new-task-exp"
+                                            placeholder="3-5 years"></div>
+                                </div>
+                                <div class="form-row" style="margin-top:10px">
+                                    <div class="form-col">
+                                        <label>Assign to Recruiters (Multi-select)</label>
+                                        <select id="new-task-recs" multiple style="height:80px"></select>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary" onclick="handleCreateAssignNew()"
+                                    style="margin-top:15px;width:100%"> Create & Assign</button>
                             </div>
                         </div>
-                        <button class="btn btn-primary" onclick="handleAssignExisting()"
-                            style="margin-top:15px;width:100%">✅ Assign Task</button>
-                    </div>
-                    <div id="assign-new-wrap" style="margin-top:20px; display:none">
-                        <div class="form-row">
-                            <div class="form-col"><label>Task Title</label><input id="new-task-title"
-                                    placeholder="e.g., Python Developer"></div>
-                            <div class="form-col"><label>Priority</label><select id="new-task-priority">
-                                    <option>High</option>
-                                    <option selected>Medium</option>
-                                    <option>Low</option>
-                                </select></div>
-                        </div>
-                        <div class="form-row" style="margin-top:10px">
-                            <div class="form-col"><label>Location</label><input id="new-task-loc"
-                                    placeholder="Remote/NY"></div>
-                            <div class="form-col"><label>Exp Required</label><input id="new-task-exp"
-                                    placeholder="3-5 years"></div>
-                        </div>
-                        <div class="form-row" style="margin-top:10px">
-                            <div class="form-col">
-                                <label>Assign to Recruiters (Multi-select)</label>
-                                <select id="new-task-recs" multiple style="height:80px"></select>
-                            </div>
-                        </div>
-                        <button class="btn btn-primary" onclick="handleCreateAssignNew()"
-                            style="margin-top:15px;width:100%">✅ Create & Assign</button>
                     </div>
                 </div>
-            </div>
-        </div>
-    </section>
+            </section>
 
-    <section id="page-activity" class="page-section">
-        <div class="page-header">
-            <div>
-                <h1>🕐 Activity Logs</h1>
-                <p class="subtitle">Login/Logout history tracking</p>
-            </div>
-        </div>
-        <div id="activity-content">
-            <div class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading logs...</p>
-            </div>
-        </div>
-    </section>
+            <section id="page-activity" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1> Activity Logs</h1>
+                        <p class="subtitle">Login/Logout history tracking</p>
+                    </div>
+                </div>
+                <div id="activity-content">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading logs...</p>
+                    </div>
+                </div>
+            </section>
 
-    <section id="page-workload" class="page-section">
-        <div class="page-header">
-            <div>
-                <h1>📈 Workload Report</h1>
-                <p class="subtitle">Detailed workload analysis and recommendations</p>
-            </div>
-            <div class="header-actions">
-                <button class="btn btn-outline btn-sm" onclick="loadWorkloadReport()">🔄 Refresh</button>
-            </div>
-        </div>
-        <div id="workload-content">
-            <div class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading report...</p>
-            </div>
-        </div>
-    </section>
+            <section id="page-workload" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1> Workload Report</h1>
+                        <p class="subtitle">Detailed workload analysis and recommendations</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn btn-outline btn-sm" onclick="loadWorkloadReport()">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div id="workload-content">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading report...</p>
+                    </div>
+                </div>
+            </section>
 
-    <section id="page-settings" class="page-section">
-        <div class="page-header">
-            <div>
-                <h1>⚙️ Admin Settings</h1>
-                <p class="subtitle">System configuration and information</p>
-            </div>
-        </div>
-        <div id="settings-content">
-            <div class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading settings...</p>
-            </div>
-        </div>
+            <section id="page-settings" class="page-section">
+                <div class="page-header">
+                    <div>
+                        <h1>⚙️ Admin Settings</h1>
+                        <p class="subtitle">System configuration and information</p>
+                    </div>
+                </div>
+                <div id="settings-content">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading settings...</p>
+                    </div>
+                </div>
+            </section>
 
-    </section>
-
-    </main>
+        </main>
     </div>
 
     <!-- ==================== CANDIDATE MODAL ==================== -->
@@ -660,7 +826,7 @@
     </div>
 
     <!-- ==================== SCRIPTS ==================== -->
-    <script src="admin-dashboard.js?v=6"></script>
+    <script src="admin-dashboard.js?v=7"></script>
     <script>
         // Chatbot FAB integration
         (function () {

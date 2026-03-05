@@ -2367,8 +2367,19 @@ def dashboard(current_user=Depends(get_current_user)):
     in_progress = sum(1 for t in all_tasks if t.get("status") == "in_progress")
     completed = sum(1 for t in all_tasks if t.get("status") == "completed")
     
-    # Get recent tasks
-    recent_tasks = sorted(all_tasks, key=lambda x: x.get("created_at", datetime.utcnow()), reverse=True)[:5]
+    # Get High Priority & Active Tasks specifically for the dashboard list
+    # Sort by priority (High > Medium > Low) and then by creation date (Newest first)
+    priority_map = {"High": 3, "Medium": 2, "Low": 1}
+    active_tasks = [t for t in all_tasks if t.get("status") != "completed"]
+    
+    # Sort: Higher priority number first, then later timestamp first
+    active_tasks.sort(
+        key=lambda x: (
+            priority_map.get(x.get("priority", "Medium"), 2),
+            x.get("created_at", datetime.min).timestamp() if isinstance(x.get("created_at"), datetime) else 0
+        ),
+        reverse=True
+    )
     
     recent_tasks_display = [
         {
@@ -2377,12 +2388,13 @@ def dashboard(current_user=Depends(get_current_user)):
             "priority": t.get("priority"),
             "urgency": t.get("urgency"),
             "status": t.get("status"),
-            "comment": t.get("comment", ""),
-            "feedback": t.get("feedback", ""),
             "created_at": t.get("created_at", "").isoformat() if t.get("created_at") else ""
         }
-        for t in recent_tasks
+        for t in active_tasks[:10] # Show up to 10 active tasks
     ]
+    
+    # Get workload stats
+    workload = WorkloadMonitor.calculate_recruiter_workload(current_user["id"])
     
     return {
         "recruiter": current_user["username"],
@@ -2390,7 +2402,9 @@ def dashboard(current_user=Depends(get_current_user)):
             "total_tasks": len(all_tasks),
             "pending": pending,
             "in_progress": in_progress,
-            "completed": completed
+            "completed": completed,
+            "workload_percentage": workload.get("workload_percentage", 0),
+            "avg_completion_hours": workload.get("avg_completion_hours", 0)
         },
         "recent_tasks": recent_tasks_display
     }
@@ -2588,9 +2602,21 @@ def update_task(
         raise HTTPException(500, f"Error updating task: {str(e)}")
 
 
-@app.delete("/api/tasks/{task_id}")
-def delete_task(task_id: str, current_user=Depends(get_current_user)):
-    """Delete a task"""
+@app.post("/api/tasks/{task_id}/complete")
+def complete_task_endpoint(task_id: str, current_user=Depends(get_current_user)):
+    """Mark a task as completed"""
+    try:
+        success = agents.task_manager.complete_task(current_user["id"], task_id)
+        if not success:
+            raise HTTPException(404, "Task not found or access denied")
+        return {"success": True, "message": "Task marked as completed"}
+    except Exception as e:
+        raise HTTPException(500, f"Error completing task: {str(e)}")
+
+
+@app.post("/api/tasks/{task_id}/delete")
+def delete_task_post(task_id: str, current_user=Depends(get_current_user)):
+    """Delete task (as POST for easier frontend usage)"""
     try:
         success = agents.task_manager.delete_task(current_user["id"], task_id)
         if not success:
@@ -2765,6 +2791,17 @@ def agent_action_route(
     except Exception as e:
         print(f"Error performing agent action '{action_request.action}': {e}")
         raise HTTPException(500, f"Error performing agent action: {str(e)}")
+
+
+@app.get("/api/recruiter/workload")
+def get_recruiter_workload(current_user=Depends(get_current_user)):
+    """Get workload details for the logged-in recruiter"""
+    try:
+        workload = WorkloadMonitor.calculate_recruiter_workload(current_user["id"])
+        return workload
+    except Exception as e:
+        print(f"❌ Error fetching recruiter workload: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/workload-report")

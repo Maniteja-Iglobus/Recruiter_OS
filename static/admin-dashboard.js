@@ -134,10 +134,10 @@ function switchLoginRole(role) {
         document.getElementById('admin-login-panel').style.display = 'none';
         document.getElementById('login-features-title').innerText = '🎯 RECRUITER FEATURES';
         document.getElementById('login-features-list').innerHTML = `
-            <li>📋 Smart task management with AI extraction</li>
-            <li>👥 Candidate tracking & resume parsing</li>
-            <li>📅 Interview scheduling with automation</li>
-            <li>📊 Workload monitoring & EOD reports</li>
+            <li> Smart task management with AI extraction</li>
+            <li> Candidate tracking & resume parsing</li>
+            <li> Interview scheduling with automation</li>
+            <li> Workload monitoring & EOD reports</li>
         `;
     }
 }
@@ -188,11 +188,11 @@ function showRecruiterDashboard() {
     // Sidebar setup
     document.getElementById('admin-nav').classList.add('hidden');
     document.getElementById('recruiter-nav').classList.remove('hidden');
-    document.getElementById('sidebar-role-label').innerText = 'Recruiter Workspace';
+    document.getElementById('sidebar-role-label').innerText = 'WORKSPACE';
 
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     document.getElementById('sidebar-user-name').innerText = user.username || 'Recruiter';
-    document.getElementById('sidebar-user-email').innerText = user.email || 'User';
+    document.getElementById('sidebar-user-email').innerText = 'Recruiter';
     document.getElementById('sidebar-user-avatar').innerText = (user.username || 'U')[0].toUpperCase();
 
     document.getElementById('rec-welcome-msg').innerText = `Welcome back, ${user.username || 'Recruiter'}! 👋`;
@@ -220,39 +220,58 @@ async function loadRecDashboard() {
     const activeTasks = recent.filter(t => t.status !== 'completed');
 
     if (activeTasks.length === 0) {
-        tasksHtml = `<div class="empty-state"><div class="icon">📭</div><p>No active tasks. Use "Extract & Upload" to create one!</p></div>`;
+        tasksHtml = `<div class="empty-state"><div class="icon"></div><p>No active tasks. Use "Extract & Upload" to create one!</p></div>`;
     } else {
-        tasksHtml = activeTasks.map(task => `
-            <div class="alert alert-info" style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <strong>${task.title}</strong>
-                    <div style="font-size:11px; margin-top:2px; opacity:0.8;">
-                        ${task.priority} Priority • ${task.urgency} • ${task.created_at.substring(0, 10)}
+        tasksHtml = activeTasks.map(task => {
+            const isHigh = task.priority === 'High';
+            const alertClass = isHigh ? 'alert-warning' : 'alert-info';
+            const borderStyle = isHigh ? 'border-left: 5px solid var(--high);' : 'border-left: 5px solid var(--info);';
+
+            return `
+                <div class="alert ${alertClass}" style="display:flex; justify-content:space-between; align-items:center; ${borderStyle} background: rgba(255,255,255,0.05); margin-bottom: 12px; transition: transform 0.2s ease;">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            ${isHigh ? '<span class="badge badge-high" style="font-size:9px;">HIGH PRIORITY</span>' : ''}
+                            <strong style="font-size:14px; color: var(--text-primary);">${task.title}</strong>
+                        </div>
+                        <div style="font-size:11px; margin-top:4px; color: var(--text-secondary); opacity:0.8;">
+                            ${task.urgency} • Created ${task.created_at.substring(0, 10)}
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-sm btn-outline" onclick="navigateTo('rec-tasks'); setTimeout(()=>toggleTask('${task.id}'), 100)" style="font-size:11px; padding: 4px 8px;">Details</button>
+                        <button class="btn btn-sm btn-success" onclick="completeTask('${task.id}')" style="font-size:11px; padding: 4px 8px;">Complete</button>
                     </div>
                 </div>
-                <button class="btn btn-sm btn-success" onclick="completeTask('${task.id}')">✅ Complete</button>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     }
+
+    const activeCount = (stats.pending || 0) + (stats.in_progress || 0);
+    const workloadPct = stats.workload_percentage || 0;
 
     container.innerHTML = `
         <div class="metrics-grid">
             <div class="metric-card info">
-                <div class="label">Total Tasks</div><div class="value">${stats.total_tasks || 0}</div>
+                <div class="metric-icon"></div>
+                <div class="label">Total Active Tasks</div><div class="value">${activeCount}</div>
             </div>
             <div class="metric-card warning">
-                <div class="label">Pending</div><div class="value">${stats.pending || 0}</div>
+                <div class="metric-icon"></div>
+                <div class="label">Pending Tasks</div><div class="value">${stats.pending || 0}</div>
             </div>
             <div class="metric-card accent">
-                <div class="label">In Progress</div><div class="value">${stats.in_progress || 0}</div>
+                <div class="metric-icon"></div>
+                <div class="label">Workload Load</div><div class="value">${workloadPct.toFixed(1)}%</div>
             </div>
             <div class="metric-card success">
-                <div class="label">Completed</div><div class="value">${stats.completed || 0}</div>
+                <div class="metric-icon"></div>
+                <div class="label">Avg Completion Time</div><div class="value">${stats.avg_completion_hours}h</div>
             </div>
         </div>
-        
+
         <div class="data-card">
-            <div class="data-card-header"><h3>🔥 Active Tasks (Pending & In Progress)</h3></div>
+            <div class="data-card-header"><h3>🔥 High Priority & Active Tasks</h3></div>
             <div class="data-card-body" style="padding: 20px;">
                 ${tasksHtml}
             </div>
@@ -285,7 +304,7 @@ function renderTasksList(tasks) {
     const container = document.getElementById('rec-tasks-content');
 
     if (!tasks || tasks.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>No tasks found.</p></div>`;
+        container.innerHTML = `<div class="empty-state"><div class="icon"></div><p>No tasks found.</p></div>`;
         return;
     }
 
@@ -295,8 +314,7 @@ function renderTasksList(tasks) {
 
     const renderTaskCard = (task) => {
         const colorClass = task.status === 'completed' ? 'success' : (task.status === 'pending' ? 'warning' : 'info');
-        const priorityEmoji = task.priority === 'High' ? '🔴' : (task.priority === 'Medium' ? '🟡' : '🟢');
-        const urgencyEmoji = task.urgency === 'Immediate' ? '🔴' : (task.urgency === '1 Week' ? '🟡' : '🟢');
+        const priorityColor = task.priority === 'High' ? 'var(--high, #ef4444)' : (task.priority === 'Medium' ? 'var(--pending, #f59e0b)' : 'var(--success, #22c55e)');
 
         // Status class for better visibility
         const statusClass = `task-status-${(task.status || 'pending').replace('_', '-')}`;
@@ -309,9 +327,8 @@ function renderTasksList(tasks) {
                         <span style="font-weight:600; font-size:14px;">${task.title}</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:12px; color:var(--text-muted); font-size:13px;">
-                        <span>${priorityEmoji} ${task.priority || 'Medium'}</span>
-                        <span>${urgencyEmoji} ${task.urgency || 'Flexible'}</span>
-                        <span>${task.location || ''}</span>
+                        <span style="color: ${priorityColor}; font-weight:700;">${task.priority || 'Medium'}</span>
+                        <span>${task.urgency || 'Flexible'}</span>
                         <span class="arrow">▼</span>
                     </div>
                 </div>
@@ -355,19 +372,19 @@ function renderTasksList(tasks) {
         
         <div id="tasks-list-container">
             ${inProgressTasks.length > 0 ? `
-                <div class="section-title" style="margin: 20px 0 10px; font-weight:700; color:var(--accent);">⚙️ In Progress (${inProgressTasks.length})</div>
+                <div class="section-title" style="margin: 20px 0 10px; font-weight:700; color:var(--accent);">In Progress (${inProgressTasks.length})</div>
                 ${inProgressTasks.map(renderTaskCard).join('')}
             ` : ''}
 
             ${pendingTasks.length > 0 ? `
-                <div class="section-title" style="margin: 20px 0 10px; font-weight:700; color:var(--warning, #f59e0b);">⏳ Pending (${pendingTasks.length})</div>
+                <div class="section-title" style="margin: 20px 0 10px; font-weight:700; color:var(--warning, #f59e0b);">Pending (${pendingTasks.length})</div>
                 ${pendingTasks.map(renderTaskCard).join('')}
             ` : ''}
 
-            ${inProgressTasks.length === 0 && pendingTasks.length === 0 ? '<div class="alert alert-info">📭 No active tasks. Create one by extracting a JD!</div>' : ''}
+            ${inProgressTasks.length === 0 && pendingTasks.length === 0 ? '<div class="alert alert-info">No active tasks. Create one by extracting a JD!</div>' : ''}
 
             ${completedTasks.length > 0 ? `
-                <div class="section-title" style="margin: 30px 0 10px; font-weight:700; color:var(--success, #22c55e);">✅ Completed (${completedTasks.length})</div>
+                <div class="section-title" style="margin: 30px 0 10px; font-weight:700; color:var(--success, #22c55e);">Completed (${completedTasks.length})</div>
                 ${completedTasks.map(renderTaskCard).join('')}
             ` : ''}
         </div>
@@ -451,7 +468,35 @@ async function loadTaskCandidates(taskId) {
     `;
 }
 
-// Global functions for candidates
+// Global functions for Tasks
+window.completeTask = async (taskId) => {
+    if (!confirm('Mark this task as completed?')) return;
+
+    const res = await apiRequest(`/api/tasks/${taskId}/complete`, 'POST');
+    if (res.success || !res.error) {
+        showToast('Task marked as completed!', 'success');
+        // Refresh both views
+        if (typeof loadRecDashboard === 'function') loadRecDashboard();
+        if (typeof loadRecTasks === 'function') loadRecTasks();
+    } else {
+        showToast(res.error || 'Failed to complete task', 'error');
+    }
+};
+
+window.deleteTask = async (taskId) => {
+    if (!confirm('Are you sure you want to PERMANENTLY delete this task?')) return;
+
+    const res = await apiRequest(`/api/tasks/${taskId}/delete`, 'POST');
+    if (res.success || !res.error) {
+        showToast('Task deleted successfully', 'success');
+        // Refresh both views
+        if (typeof loadRecDashboard === 'function') loadRecDashboard();
+        if (typeof loadRecTasks === 'function') loadRecTasks();
+    } else {
+        showToast(res.error || 'Failed to delete task', 'error');
+    }
+};
+
 // Global functions for candidates
 window.updateCandidateStatus = async (candId, newStatus) => {
     // Backend expects status as query param
@@ -1021,7 +1066,7 @@ async function handleGenerateEOD() {
     const area = document.getElementById('eod-report-area');
 
     const originalText = btn.innerText;
-    btn.innerText = '⌛ Generating...';
+    btn.innerText = 'Generating...';
     btn.disabled = true;
 
     const res = await apiRequest('/api/eod-summary', 'POST', {});
@@ -1066,24 +1111,87 @@ async function handleGenerateEOD() {
 async function handleCheckWorkload() {
     const analysisArea = document.getElementById('rec-workload-analysis');
 
-    const res = await apiRequest('/api/admin/workload-report');
+    // Set date label
+    const dateLabel = document.getElementById('eod-date-label');
+    if (dateLabel) {
+        dateLabel.innerText = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
 
-    if (res.recruiters) {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const myLoad = res.recruiters.find(r => r.recruiter_name === user.username);
+    const res = await apiRequest('/api/recruiter/workload');
+
+    if (res && !res.error) {
+        const myLoad = res;
 
         if (myLoad) {
+            const activeCount = myLoad.total_tasks - myLoad.completed_tasks;
+            const pendingCount = myLoad.pending_tasks;
+
             // Update Metric Cards
-            document.getElementById('val-total-tasks').innerText = myLoad.total_tasks;
-            document.getElementById('val-pending-tasks').innerText = myLoad.total_tasks - myLoad.completed_tasks; // Simple approx
+            document.getElementById('val-total-tasks').innerText = activeCount;
+            document.getElementById('val-pending-tasks').innerText = pendingCount;
             document.getElementById('val-workload-percent').innerText = myLoad.workload_percentage.toFixed(1) + '%';
             document.getElementById('val-avg-time').innerText = myLoad.avg_completion_hours + 'h';
+
+            // Update Progress Bar
+            const barFill = document.getElementById('workload-bar-fill');
+            const barLabel = document.getElementById('workload-bar-label');
+            if (barFill && barLabel) {
+                const pct = Math.min(myLoad.workload_percentage, 100);
+                barFill.style.width = pct + '%';
+                barLabel.innerText = pct.toFixed(1) + '%';
+
+                // Change progress bar color based on load
+                barFill.className = 'progress-bar-fill';
+                if (pct > 75) {
+                    barFill.classList.add('progress-red');
+                } else if (pct > 45) {
+                    barFill.classList.add('progress-orange');
+                } else {
+                    barFill.classList.add('progress-green');
+                }
+            }
 
             // Risk Analysis
             let riskClass = myLoad.workload_percentage > 75 ? 'danger' : (myLoad.workload_percentage > 45 ? 'warning' : 'success');
             let riskLabel = myLoad.workload_percentage > 75 ? 'High Risk' : (myLoad.workload_percentage > 45 ? 'Moderate load' : 'Optimal Capacity');
-            let recommendation = myLoad.workload_percentage > 75 ? "Your workload is critical. Consider completing high-priority tasks before starting new ones." :
-                (myLoad.workload_percentage > 45 ? "You are at moderate capacity. Focus on maintaining your current pace." : "You have capacity to take on more complex tasks.");
+
+            let recommendations = [];
+            if (myLoad.workload_percentage > 85) {
+                recommendations = [
+                    "Immediate burnout risk detected. Stop accepting new tasks.",
+                    "Delegate at least 2 pending tasks to another team member.",
+                    "Focus only on Immediate urgency tasks today.",
+                    "Request a workload review with your manager."
+                ];
+            } else if (myLoad.workload_percentage > 70) {
+                recommendations = [
+                    "High workload. Avoid starting new JD extractions today.",
+                    "Prioritize High priority tasks over Medium ones.",
+                    "Clear your calendar of non-essential meetings.",
+                    "Ensure EOD report is detailed for visibility."
+                ];
+            } else if (myLoad.workload_percentage > 45) {
+                recommendations = [
+                    "Moderate workload. You are in the Productive Zone.",
+                    "Follow up on pending candidate feedbacks.",
+                    "Schedule interviews for the In Progress roles.",
+                    "Monitor Medium priority tasks before they escalate."
+                ];
+            } else {
+                recommendations = [
+                    "Optimal capacity. You have room for 2-3 new JD extractions.",
+                    "Focus on sourcing high-quality candidates for open roles.",
+                    "Update older candidate statuses to keep the pipeline clean.",
+                    "Great time for platform training or JD template cleanup."
+                ];
+            }
+
+            // Update risk badge
+            const riskBadge = document.getElementById('risk-level-badge');
+            if (riskBadge) {
+                riskBadge.className = `badge badge-${riskClass === 'danger' ? 'high' : (riskClass === 'warning' ? 'pending' : 'completed')}`;
+                riskBadge.innerText = riskLabel;
+            }
 
             analysisArea.innerHTML = `
                 <div class="alert alert-${riskClass}" style="margin-bottom:15px;">
@@ -1091,13 +1199,45 @@ async function handleCheckWorkload() {
                     <p style="font-size:13px; opacity:0.9;">Based on your active tasks and average completion speeds.</p>
                 </div>
                 <div style="font-size:14px; line-height:1.6; color:var(--text-secondary);">
-                    <p><strong>Recommendation:</strong> ${recommendation}</p>
-                    <ul style="margin-top:12px; padding-left:20px;">
-                        <li>Active Roles: ${myLoad.total_tasks}</li>
-                        <li>Avg. Burn rate: ${myLoad.avg_completion_hours} hrs/task</li>
+                    <p style="margin-bottom:10px;"><strong>AI Recommended Actions:</strong></p>
+                    <ul style="padding-left:20px; list-style-type: none;">
+                        ${recommendations.map(req => `<li style="margin-bottom:8px; display:flex; gap:10px;"><span>•</span> ${req}</li>`).join('')}
                     </ul>
+                    <div style="margin-top:20px; padding-top:15px; border-top:1px solid var(--border-light); font-size:12px;">
+                        <p><strong>Stats Summary:</strong> Active Roles: ${activeCount} | Pending: ${pendingCount} | Burn Rate: ${myLoad.avg_completion_hours} hrs/task</p>
+                    </div>
                 </div>
              `;
+
+            // Update Activity Timeline
+            const timeline = document.getElementById('eod-activity-timeline');
+            if (timeline) {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                timeline.innerHTML = `
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: var(--info);"></div>
+                        <div class="timeline-content">
+                            <div class="title"> Workload status refreshed</div>
+                            <div class="time">${timeStr} — ${activeCount} active tasks, ${myLoad.workload_percentage.toFixed(1)}% load</div>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: var(--success);"></div>
+                        <div class="timeline-content">
+                            <div class="title"> ${myLoad.completed_tasks} task(s) completed</div>
+                            <div class="time">Avg completion: ${myLoad.avg_completion_hours} hrs per task</div>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: var(--warning);"></div>
+                        <div class="timeline-content">
+                            <div class="title"> ${pendingCount} task(s) still pending</div>
+                            <div class="time">Risk level: ${riskLabel}</div>
+                        </div>
+                    </div>
+                `;
+            }
         } else {
             analysisArea.innerHTML = '<div class="alert alert-info">No workload data found for your account. Start by creating or being assigned to a task.</div>';
         }
@@ -1116,6 +1256,25 @@ window.printReport = function () {
     printWindow.print();
 };
 
+window.copyReport = function () {
+    const area = document.getElementById('eod-report-area');
+    if (area) {
+        const text = area.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Report copied to clipboard!', 'success');
+        }).catch(() => {
+            // Fallback
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showToast('Report copied to clipboard!', 'success');
+        });
+    }
+};
+
 
 // ==================== ADMIN FUNCTIONS (Legacy + Updated) ====================
 
@@ -1126,11 +1285,11 @@ function showDashboard() {
     // Sidebar setup
     document.getElementById('admin-nav').classList.remove('hidden');
     document.getElementById('recruiter-nav').classList.add('hidden');
-    document.getElementById('sidebar-role-label').innerText = 'Administrator';
+    document.getElementById('sidebar-role-label').innerText = 'ADMIN';
 
     const admin = JSON.parse(localStorage.getItem('admin_user') || '{}');
     document.getElementById('sidebar-user-name').innerText = admin.username || 'Admin';
-    document.getElementById('sidebar-user-email').innerText = 'admin@recruiter-os.com';
+    document.getElementById('sidebar-user-email').innerText = 'Administrator';
     document.getElementById('sidebar-user-avatar').innerText = 'A';
 
     navigateTo('dashboard');
